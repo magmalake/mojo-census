@@ -22,25 +22,56 @@
 # builds on GitHub's arm64 runners (Neoverse N2, Armv9 with SVE2), and Hetzner's
 # CAX servers are Ampere Altra (Neoverse N1, Armv8.2), where those binaries die
 # with SIGILL (exit 132). Neoverse N1 code also runs on N2, V1/V2 and Graviton.
-FROM ghcr.io/prefix-dev/pixi:0.78.0 AS build
-ARG ORCA_SOURCE=""
-ARG ORCA_COMMIT=""
-ARG MOJO_TARGET_CPU=neoverse-n1
+#
+# The stages are ordered for the layer cache (CI keeps it between runs): `env`
+# is the pixi environment and depends only on pixi.toml and pixi.lock, and
+# both `build` (the project's source) and `git` (via `curl`) start from it, so
+# a commit that changes only source reuses `pixi install` and git as they were.
+# The build arguments are declared in the stages that use them, after `env`:
+# a RUN sees every ARG declared before it, so a new ORCA_COMMIT on each commit
+# would otherwise rerun `pixi install` too.
+FROM ghcr.io/prefix-dev/pixi:0.78.0 AS env
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src/project
 COPY pixi.toml pixi.lock ./
 RUN pixi install --locked
+
+# MOJO_BUILD_JOBS: how many `mojo build`s run at once. Each takes one core for
+# most of its time and a few GB at its peak, so by default one per core and
+# per 3 GB of memory, whichever is fewer (GitHub's arm64 runner, 4 cores and
+# 16 GB: 4; the serial loop took 1114 s there). Each build's output is held
+# until it finishes and printed in one piece; any failure fails the stage,
+# after the others finish, and names the file that failed.
+FROM env AS build
+ARG ORCA_SOURCE=""
+ARG ORCA_COMMIT=""
+ARG MOJO_TARGET_CPU=neoverse-n1
+ARG MOJO_BUILD_JOBS=""
 COPY . .
-RUN mkdir -p /out/bin /out/pipelines \
-    && pixi run sh -c 'inc=""; [ -d src ] && inc="-I src"; \
-        [ -f bin/scheduler.mojo ] || { echo "orca aws push: no bin/scheduler.mojo calling orca.command"; exit 1; }; \
-        for f in bin/*.mojo; do n=$(basename "$f" .mojo); [ "$n" = scheduler ] && n=orca; \
-            mojo build -g1 --target-cpu "$MOJO_TARGET_CPU" $inc "$f" -o "/out/bin/$n" || exit 1; done; \
-        for p in pipelines/*.mojo; do [ -f "$p" ] || continue; n=$(basename "$p" .mojo); \
-            mojo build -g1 --target-cpu "$MOJO_TARGET_CPU" $inc -D ORCA_SOURCE='"${ORCA_SOURCE}"' -D ORCA_COMMIT='"${ORCA_COMMIT}"' \
-                "$p" -o "/out/pipelines/$n" || exit 1; done; \
-        if ls /out/pipelines/* > /dev/null 2>&1; then /out/bin/orca locate /out/pipelines/* --root .; fi'
+RUN set -e; mkdir -p /out/bin /out/pipelines /tmp/mojo-build; \
+    [ -f bin/scheduler.mojo ] || { echo "orca aws push: no bin/scheduler.mojo calling orca.command"; exit 1; }; \
+    INC=""; [ -d src ] && INC="-I src"; export INC; \
+    jobs="$MOJO_BUILD_JOBS"; \
+    if [ -z "$jobs" ]; then jobs=$(awk '/^MemTotal:/ {print int($2 / 3145728)}' /proc/meminfo); \
+        [ "$jobs" -le "$(nproc)" ] || jobs=$(nproc); [ "$jobs" -ge 1 ] || jobs=1; fi; \
+    echo "mojo build: $jobs at a time, $(nproc) cores, $(awk '/^MemTotal:/ {print int($2 / 1048576)}' /proc/meminfo) GB"; \
+    printf '%s\n' \
+        'f=$1; n=$(basename "$f" .mojo); log=/tmp/mojo-build/$(echo "$f" | tr / _).log; start=$(date +%s)' \
+        'case "$f" in' \
+        'bin/*) [ "$n" = scheduler ] && n=orca; set -- $INC -o "/out/bin/$n" ;;' \
+        '*) set -- $INC -D ORCA_SOURCE="$ORCA_SOURCE" -D ORCA_COMMIT="$ORCA_COMMIT" -o "/out/pipelines/$n" ;;' \
+        'esac' \
+        'if mojo build -g1 --target-cpu "$MOJO_TARGET_CPU" "$@" "$f" > "$log" 2>&1; then status=0; else status=$?; fi' \
+        'cat "$log"' \
+        'if [ $status -ne 0 ]; then echo "mojo build: $f FAILED (exit $status)"; echo "$f" >> /tmp/mojo-build/failed; exit 1; fi' \
+        'echo "mojo build: $f in $(( $(date +%s) - start )) s"' \
+        > /tmp/mojo-build/one.sh; \
+    for f in bin/*.mojo pipelines/*.mojo; do if [ -f "$f" ]; then echo "$f"; fi; done > /tmp/mojo-build/files; \
+    pixi run sh -c "xargs -P $jobs -n 1 sh /tmp/mojo-build/one.sh < /tmp/mojo-build/files" \
+        || { echo "mojo build failed:" $(cat /tmp/mojo-build/failed 2> /dev/null); exit 1; }; \
+    echo "mojo build: peak memory $(awk '{print int($1 / 1048576)}' /sys/fs/cgroup/memory.peak 2> /dev/null) MB"; \
+    if ls /out/pipelines/* > /dev/null 2>&1; then pixi run /out/bin/orca locate /out/pipelines/* --root .; fi
 # The line tables compressed, which llvm-symbolizer reads as they are.
 RUN for b in /out/bin/* /out/pipelines/*; do [ -x "$b" ] || continue; \
         objcopy --compress-debug-sections=zlib "$b" || exit 1; done
@@ -67,14 +98,23 @@ RUN env=/src/project/.pixi/envs/default && mkdir -p /out/lib /out/libexec \
 # builtin they run) and git-remote-https, without Perl, Tcl/Tk, gettext,
 # Python or expat (Debian's git package and what it pulls in: 90 MB; this,
 # 5 MB). Built on the image's Debian against the pixi environment's libcurl,
-# which /opt/orca/lib ships anyway.
+# which /opt/orca/lib ships anyway (objectstore links it). `curl` gathers
+# libcurl, the pixi libraries it links (not libpsl or ICU, as above) and its
+# headers from `env`, not from `build`, so git is built again only when the
+# pixi environment changes.
+FROM env AS curl
+RUN env=/src/project/.pixi/envs/default && mkdir -p /deps/lib /deps/include \
+    && cp -L $env/lib/libcurl.so.4 /deps/lib/ \
+    && ldd $env/lib/libcurl.so.4 | awk -v e="$env" '$3 ~ "^"e {print $3}' \
+        | grep -v -e '/libicu' -e '/libpsl' | sort -u | xargs -r cp -L -t /deps/lib \
+    && cp -r $env/include/curl /deps/include/
+
 FROM debian:bookworm-slim AS git
 ARG GIT_VERSION=2.51.2
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gcc make libc6-dev \
       zlib1g-dev libpsl5 xz-utils \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/lib /deps/lib
-COPY --from=build /src/project/.pixi/envs/default/include/curl /deps/include/curl
+COPY --from=curl /deps /deps
 RUN curl -fsSL https://mirrors.edge.kernel.org/pub/software/scm/git/git-$GIT_VERSION.tar.xz | tar xJ -C /usr/src \
     && cd /usr/src/git-$GIT_VERSION && ln -s libcurl.so.4 /deps/lib/libcurl.so \
     && make -j"$(nproc)" prefix=/opt/orca gitexecdir=/opt/orca/libexec/git \

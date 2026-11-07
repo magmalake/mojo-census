@@ -32,15 +32,31 @@ jobs:
       GHCR_IMAGE: ghcr.io/magmalake/orca
     steps:
       - uses: actions/checkout@v4
+      # Buildx, for its layer cache in GitHub's Actions cache: every layer
+      # (mode=max, the intermediate stages too), so a commit that changes only
+      # source reuses `pixi install` and the git build (see Dockerfile.orca).
+      # load puts the image in the runner's docker, for the steps below.
+      - uses: docker/setup-buildx-action@v3
       - name: Build the image
-        run: |
-          docker build -f Dockerfile.orca -t gharchive-image \
-            --build-arg ORCA_SOURCE="https://github.com/${{ github.repository }}" \
-            --build-arg ORCA_COMMIT="${{ github.sha }}" \
-            --label org.opencontainers.image.source="https://github.com/${{ github.repository }}" \
-            --label org.opencontainers.image.revision="${{ github.sha }}" .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.orca
+          tags: gharchive-image
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            ORCA_SOURCE=https://github.com/${{ github.repository }}
+            ORCA_COMMIT=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
       - name: Size
         run: docker image ls gharchive-image --format '{{.Size}}'
+      - name: TEMP contents and git
+        run: |
+          docker run --rm --entrypoint sh gharchive-image -c 'cd /opt/orca && find . \( -type f -o -type l \) | sort && git --version && git ls-remote https://github.com/magmalake/mojo-census HEAD'
       - name: One hour of 2025-01-01 inside the image
         run: |
           docker run --rm --entrypoint sh \
