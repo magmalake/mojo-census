@@ -341,16 +341,23 @@ register again. `mojo_retool` is a one-off and isn't in the file.
 ### Edge caching
 
 The console answers pages and JSON with `Cache-Control: public, max-age=60,
-s-maxage=1800` (the warming-up page with `no-store`): a minute in the
-browser, 30 minutes at Cloudflare, the refresher's period. The tunnel's
+s-maxage=1800` (the warming-up page, `/checks` and any answer but a 200
+with `no-store`): a minute in the browser, 30 minutes at Cloudflare, the refresher's period. The tunnel's
 traffic goes through Cloudflare's proxy, but by default Cloudflare caches only
 static file types, never HTML (`cf-cache-status: DYNAMIC`), so mojourney.dev
 needs a cache rule: Caching → Cache Rules → hostname equals `mojourney.dev`,
 Cache eligibility "Eligible for cache", Edge TTL "Use cache-control header if
-present". Check with `curl -sI https://mojourney.dev/ | grep cf-cache` (`MISS`,
-then `HIT`). PostHog keeps working: the snippet runs in the browser, and the
-`mojourney-ph` Worker serves `/ph` ahead of the cache. Don't add the rule for
-orca.mojourney.dev: its pages are live and some are behind a login.
+present", and Caching → Configuration → Browser Cache TTL "Respect Existing
+Headers" (its default, 4 hours, overrides the minute). Or with the API, a
+token with Cache Rules: Edit on the zone and the zone ID from its Overview
+page: `PUT /client/v4/zones/<zone>/rulesets/phases/http_request_cache_settings/entrypoint`
+with one rule, expression `(http.host eq "mojourney.dev")`, action
+`set_cache_settings`, `{"cache": true, "edge_ttl": {"mode": "respect_origin"}}`.
+Check with two GETs (`curl -s -D - -o /dev/null https://mojourney.dev/ | grep
+cf-cache`: `MISS`, then `HIT`; HEAD requests aren't a reliable test). PostHog keeps working: the snippet runs in
+the browser, and the `mojourney-ph` Worker serves `/ph` ahead of the cache.
+Don't add the rule for orca.mojourney.dev: its pages are live and some are
+behind a login.
 
 ### Analytics
 
