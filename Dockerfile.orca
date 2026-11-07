@@ -28,21 +28,35 @@
 # builds on GitHub's arm64 runners (Neoverse N2, Armv9 with SVE2), and Hetzner's
 # CAX servers are Ampere Altra (Neoverse N1, Armv8.2), where those binaries die
 # with SIGILL (exit 132). Neoverse N1 code also runs on N2, V1/V2 and Graviton.
-FROM ghcr.io/prefix-dev/pixi:0.78.0 AS build
-ARG ORCA_SOURCE=""
-ARG ORCA_COMMIT=""
-ARG MOJO_TARGET_CPU=neoverse-n1
+#
+# The stages are ordered for the layer cache (CI keeps it between runs): `env`
+# is the pixi environment and depends only on pixi.toml and pixi.lock, and
+# both `build` (the project's source) and `git` (via `curl`) start from it, so
+# a commit that changes only source reuses `pixi install` and git as they were.
+# The build arguments are declared in the stages that use them, after `env`:
+# a RUN sees every ARG declared before it, so a new ORCA_COMMIT on each commit
+# would otherwise rerun `pixi install` too.
+FROM ghcr.io/prefix-dev/pixi:0.78.0 AS env
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src/project
 COPY pixi.toml pixi.lock ./
 RUN pixi install --locked
+
+# MOJO_BUILD_JOBS: 1 builds the two multi-call binaries one after the other;
+# otherwise scripts/build.sh builds them at once (see there).
+FROM env AS build
+ARG ORCA_SOURCE=""
+ARG ORCA_COMMIT=""
+ARG MOJO_TARGET_CPU=neoverse-n1
+ARG MOJO_BUILD_JOBS=""
 COPY . .
 # ORCA_SOURCE and ORCA_COMMIT reach every program now, which only a
 # pipeline's describe reads.
 RUN mkdir -p /out/bin /out/pipelines \
     && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines -g1 --target-cpu "$MOJO_TARGET_CPU" \
             -D ORCA_SOURCE='"${ORCA_SOURCE}"' -D ORCA_COMMIT='"${ORCA_COMMIT}"' || exit 1; \
+        echo "mojo build: peak memory $(awk "{print int(\$1 / 1048576)}" /sys/fs/cgroup/memory.peak 2> /dev/null) MB"; \
         if ls /out/pipelines/* > /dev/null 2>&1; then /out/bin/orca locate /out/pipelines/* --root .; fi'
 # The line tables compressed, which llvm-symbolizer reads as they are: the
 # binaries, not their links, which objcopy would replace with copies.
@@ -70,14 +84,23 @@ RUN env=/src/project/.pixi/envs/default && mkdir -p /out/lib /out/libexec \
 # builtin they run) and git-remote-https, without Perl, Tcl/Tk, gettext,
 # Python or expat (Debian's git package and what it pulls in: 90 MB; this,
 # 5 MB). Built on the image's Debian against the pixi environment's libcurl,
-# which /opt/orca/lib ships anyway.
+# which /opt/orca/lib ships anyway (objectstore links it). `curl` gathers
+# libcurl, the pixi libraries it links (not libpsl or ICU, as above) and its
+# headers from `env`, not from `build`, so git is built again only when the
+# pixi environment changes.
+FROM env AS curl
+RUN env=/src/project/.pixi/envs/default && mkdir -p /deps/lib /deps/include \
+    && cp -L $env/lib/libcurl.so.4 /deps/lib/ \
+    && ldd $env/lib/libcurl.so.4 | awk -v e="$env" '$3 ~ "^"e {print $3}' \
+        | grep -v -e '/libicu' -e '/libpsl' | sort -u | xargs -r cp -L -t /deps/lib \
+    && cp -r $env/include/curl /deps/include/
+
 FROM debian:bookworm-slim AS git
 ARG GIT_VERSION=2.51.2
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gcc make libc6-dev \
       zlib1g-dev libpsl5 xz-utils \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/lib /deps/lib
-COPY --from=build /src/project/.pixi/envs/default/include/curl /deps/include/curl
+COPY --from=curl /deps /deps
 RUN curl -fsSL https://mirrors.edge.kernel.org/pub/software/scm/git/git-$GIT_VERSION.tar.xz | tar xJ -C /usr/src \
     && cd /usr/src/git-$GIT_VERSION && ln -s libcurl.so.4 /deps/lib/libcurl.so \
     && make -j"$(nproc)" prefix=/opt/orca gitexecdir=/opt/orca/libexec/git \
