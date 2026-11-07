@@ -54,9 +54,6 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
       - name: Size
         run: docker image ls gharchive-image --format '{{.Size}}'
-      - name: TEMP contents and git
-        run: |
-          docker run --rm --entrypoint sh gharchive-image -c 'cd /opt/orca && find . \( -type f -o -type l \) | sort && git --version && git ls-remote https://github.com/magmalake/mojo-census HEAD'
       - name: One hour of 2025-01-01 inside the image
         run: |
           docker run --rm --entrypoint sh \

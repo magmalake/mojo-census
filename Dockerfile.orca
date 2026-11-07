@@ -37,12 +37,12 @@ WORKDIR /src/project
 COPY pixi.toml pixi.lock ./
 RUN pixi install --locked
 
-# MOJO_BUILD_JOBS: how many `mojo build`s run at once. Each takes one core for
-# most of its time and a few GB at its peak, so by default one per core and
-# per 3 GB of memory, whichever is fewer (GitHub's arm64 runner, 4 cores and
-# 16 GB: 4; the serial loop took 1114 s there). Each build's output is held
-# until it finishes and printed in one piece; any failure fails the stage,
-# after the others finish, and names the file that failed.
+# MOJO_BUILD_JOBS: how many `mojo build`s run at once. One alone keeps about
+# two cores busy, and four at once peaked at 10 GB, so by default one per core
+# and per 3 GB of memory, whichever is fewer (GitHub's arm64 runner, 4 cores
+# and 16 GB: 4, which took the builds from 1134 s, one at a time, to 559 s).
+# Each build's output is held until it finishes and printed in one piece; any
+# failure fails the stage, after the others finish, and names the file.
 FROM env AS build
 ARG ORCA_SOURCE=""
 ARG ORCA_COMMIT=""
