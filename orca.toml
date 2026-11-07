@@ -51,12 +51,18 @@ secrets = { GITHUB_TOKEN = "orca/github-token" }
 # transfer under GIT_LOW_SPEED_LIMIT (1000) bytes a second for
 # GIT_LOW_SPEED_SECONDS (60). A repository that still fails is logged and
 # skipped for the run.
-env = { DISTA_WORKER_SLOTS = "3" }
+#
+# One clone at a time on the CAX21 while these pipelines move from bgent to
+# the server: their first runs there catch up all 500+ repositories, next to
+# gharchive's fill, and a full clone of a large repository (modular/modular)
+# can take GBs. Raise to 3 again once orca's run pages show the peak
+# (magmalake/orca.mojo#200).
+env = { DISTA_WORKER_SLOTS = "1" }
 
 [pipelines.mojo_versions]
 # Blobless clones of the repositories whose version is unknown, one dista
-# task each; no GitHub API, so no token.
-env = { DISTA_WORKER_SLOTS = "3" }
+# task each; no GitHub API, so no token. One at a time, like mojo_history.
+env = { DISTA_WORKER_SLOTS = "1" }
 
 [pipelines.mojo_activity]
 env = { DISTA_WORKER_SLOTS = "3" }
