@@ -9,6 +9,12 @@
 # import path if the project has one. A project with a Dockerfile.orca of
 # its own builds that instead.
 #
+# They are two binaries in /opt/orca/bin, multicall-apps (orca, console)
+# and multicall-pipelines (the rest), each running the program its name
+# says, and each program's path is a link to one (scripts/build.sh): the
+# code they share (orca, iceberg, parquet, flare...) is compiled once and is
+# in the image once. Any change rebuilds all of one.
+#
 # ORCA_SOURCE and ORCA_COMMIT say what the pipelines were built from, which
 # each run records and orca ui links.
 #
@@ -32,18 +38,15 @@ WORKDIR /src/project
 COPY pixi.toml pixi.lock ./
 RUN pixi install --locked
 COPY . .
+# ORCA_SOURCE and ORCA_COMMIT reach every program now, which only a
+# pipeline's describe reads.
 RUN mkdir -p /out/bin /out/pipelines \
-    && pixi run sh -c 'inc=""; [ -d src ] && inc="-I src"; \
-        [ -f bin/scheduler.mojo ] || { echo "orca aws push: no bin/scheduler.mojo calling orca.command"; exit 1; }; \
-        for f in bin/*.mojo; do n=$(basename "$f" .mojo); [ "$n" = scheduler ] && n=orca; \
-            mojo build -g1 --target-cpu "$MOJO_TARGET_CPU" $inc "$f" -o "/out/bin/$n" || exit 1; done; \
-        for p in pipelines/*.mojo; do [ -f "$p" ] || continue; n=$(basename "$p" .mojo); \
-            mojo build -g1 --target-cpu "$MOJO_TARGET_CPU" $inc -D ORCA_SOURCE='"${ORCA_SOURCE}"' -D ORCA_COMMIT='"${ORCA_COMMIT}"' \
-                "$p" -o "/out/pipelines/$n" || exit 1; done; \
+    && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines -g1 --target-cpu "$MOJO_TARGET_CPU" \
+            -D ORCA_SOURCE='"${ORCA_SOURCE}"' -D ORCA_COMMIT='"${ORCA_COMMIT}"' || exit 1; \
         if ls /out/pipelines/* > /dev/null 2>&1; then /out/bin/orca locate /out/pipelines/* --root .; fi'
-# The line tables compressed, which llvm-symbolizer reads as they are.
-RUN for b in /out/bin/* /out/pipelines/*; do [ -x "$b" ] || continue; \
-        objcopy --compress-debug-sections=zlib "$b" || exit 1; done
+# The line tables compressed, which llvm-symbolizer reads as they are: the
+# binaries, not their links, which objcopy would replace with copies.
+RUN for b in /out/bin/multicall-*; do objcopy --compress-debug-sections=zlib "$b" || exit 1; done
 # Only the pixi environment's libraries the binaries link or dlopen: libpq
 # (postgres), flare's shims (orca ui, apps), and every tin's shim, such as
 # objectstore's and the codecs' (zstd, for Iceberg writes); and
