@@ -9,6 +9,12 @@
 # import path if the project has one. A project with a Dockerfile.orca of
 # its own builds that instead.
 #
+# They are two binaries in /opt/orca/bin, multicall-apps (orca, console)
+# and multicall-pipelines (the rest), each running the program its name
+# says, and each program's path is a link to one (scripts/build.sh): the
+# code they share (orca, iceberg, parquet, flare...) is compiled once and is
+# in the image once. Any change rebuilds all of one.
+#
 # ORCA_SOURCE and ORCA_COMMIT say what the pipelines were built from, which
 # each run records and orca ui links.
 #
@@ -37,44 +43,24 @@ WORKDIR /src/project
 COPY pixi.toml pixi.lock ./
 RUN pixi install --locked
 
-# MOJO_BUILD_JOBS: how many `mojo build`s run at once. One alone keeps about
-# two cores busy, and four at once peaked at 10 GB, so by default one per core
-# and per 3 GB of memory, whichever is fewer (GitHub's arm64 runner, 4 cores
-# and 16 GB: 4, which took the builds from 1134 s, one at a time, to 559 s).
-# Each build's output is held until it finishes and printed in one piece; any
-# failure fails the stage, after the others finish, and names the file.
+# MOJO_BUILD_JOBS: 1 builds the two multi-call binaries one after the other;
+# otherwise scripts/build.sh builds them at once (see there).
 FROM env AS build
 ARG ORCA_SOURCE=""
 ARG ORCA_COMMIT=""
 ARG MOJO_TARGET_CPU=neoverse-n1
 ARG MOJO_BUILD_JOBS=""
 COPY . .
-RUN set -e; mkdir -p /out/bin /out/pipelines /tmp/mojo-build; \
-    [ -f bin/scheduler.mojo ] || { echo "orca aws push: no bin/scheduler.mojo calling orca.command"; exit 1; }; \
-    INC=""; [ -d src ] && INC="-I src"; export INC; \
-    jobs="$MOJO_BUILD_JOBS"; \
-    if [ -z "$jobs" ]; then jobs=$(awk '/^MemTotal:/ {print int($2 / 3145728)}' /proc/meminfo); \
-        [ "$jobs" -le "$(nproc)" ] || jobs=$(nproc); [ "$jobs" -ge 1 ] || jobs=1; fi; \
-    echo "mojo build: $jobs at a time, $(nproc) cores, $(awk '/^MemTotal:/ {print int($2 / 1048576)}' /proc/meminfo) GB"; \
-    printf '%s\n' \
-        'f=$1; n=$(basename "$f" .mojo); log=/tmp/mojo-build/$(echo "$f" | tr / _).log; start=$(date +%s)' \
-        'case "$f" in' \
-        'bin/*) [ "$n" = scheduler ] && n=orca; set -- $INC -o "/out/bin/$n" ;;' \
-        '*) set -- $INC -D ORCA_SOURCE="$ORCA_SOURCE" -D ORCA_COMMIT="$ORCA_COMMIT" -o "/out/pipelines/$n" ;;' \
-        'esac' \
-        'if mojo build -g1 --target-cpu "$MOJO_TARGET_CPU" "$@" "$f" > "$log" 2>&1; then status=0; else status=$?; fi' \
-        'cat "$log"' \
-        'if [ $status -ne 0 ]; then echo "mojo build: $f FAILED (exit $status)"; echo "$f" >> /tmp/mojo-build/failed; exit 1; fi' \
-        'echo "mojo build: $f in $(( $(date +%s) - start )) s"' \
-        > /tmp/mojo-build/one.sh; \
-    for f in bin/*.mojo pipelines/*.mojo; do if [ -f "$f" ]; then echo "$f"; fi; done > /tmp/mojo-build/files; \
-    pixi run sh -c "xargs -P $jobs -n 1 sh /tmp/mojo-build/one.sh < /tmp/mojo-build/files" \
-        || { echo "mojo build failed:" $(cat /tmp/mojo-build/failed 2> /dev/null); exit 1; }; \
-    echo "mojo build: peak memory $(awk '{print int($1 / 1048576)}' /sys/fs/cgroup/memory.peak 2> /dev/null) MB"; \
-    if ls /out/pipelines/* > /dev/null 2>&1; then pixi run /out/bin/orca locate /out/pipelines/* --root .; fi
-# The line tables compressed, which llvm-symbolizer reads as they are.
-RUN for b in /out/bin/* /out/pipelines/*; do [ -x "$b" ] || continue; \
-        objcopy --compress-debug-sections=zlib "$b" || exit 1; done
+# ORCA_SOURCE and ORCA_COMMIT reach every program now, which only a
+# pipeline's describe reads.
+RUN mkdir -p /out/bin /out/pipelines \
+    && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines -g1 --target-cpu "$MOJO_TARGET_CPU" \
+            -D ORCA_SOURCE='"${ORCA_SOURCE}"' -D ORCA_COMMIT='"${ORCA_COMMIT}"' || exit 1; \
+        echo "mojo build: peak memory $(awk "{print int(\$1 / 1048576)}" /sys/fs/cgroup/memory.peak 2> /dev/null) MB"; \
+        if ls /out/pipelines/* > /dev/null 2>&1; then /out/bin/orca locate /out/pipelines/* --root .; fi'
+# The line tables compressed, which llvm-symbolizer reads as they are: the
+# binaries, not their links, which objcopy would replace with copies.
+RUN for b in /out/bin/multicall-*; do objcopy --compress-debug-sections=zlib "$b" || exit 1; done
 # Only the pixi environment's libraries the binaries link or dlopen: libpq
 # (postgres), flare's shims (orca ui, apps), and every tin's shim, such as
 # objectstore's and the codecs' (zstd, for Iceberg writes); and
