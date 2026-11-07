@@ -297,8 +297,8 @@ comptime FEEDBACK = "https://github.com/magmalake/mojo-census/issues"
 comptime EDGE_CACHE = "public, max-age=60, s-maxage=1800"
 """Cache-Control of a page or JSON answer: a minute in the browser, 30 minutes
 at Cloudflare's edge (the refresher's period; a cache rule for mojourney.dev
-must make HTML eligible for caching: README, "Edge caching"). The warming-up page
-is `no-store`."""
+must make HTML eligible for caching: README, "Edge caching"). The warming-up page,
+`/checks` and any answer but a 200 are `no-store`."""
 
 comptime DESCRIPTION = (
     "Mojo repos, versions and growth, counted from GH Archive by"
@@ -2503,8 +2503,9 @@ struct Site(Handler, Copyable):
         var note = notice(runs.get()[])
         if note.byte_length() > 0:
             resp = _with_notice(resp^, note)
-        if resp.status == 200:
-            resp.headers.set("Cache-Control", EDGE_CACHE)
+        # A missing repo or a bad query isn't kept at the edge: Cloudflare would
+        # otherwise hold it for its default TTL.
+        resp.headers.set("Cache-Control", EDGE_CACHE if resp.status == 200 else "no-store")
         return resp^
 
     def _route(self, req: Request, c: Cache) raises -> Response:
@@ -2533,6 +2534,8 @@ def _checks_page(run: CheckRun) raises -> Response:
     """`/checks`: the last data checks, as text."""
     var resp = Response(status=200, reason="OK", body=List[UInt8](run.text().as_bytes()))
     resp.headers.set("Content-Type", "text/plain; charset=utf-8")
+    # Never cached: it's where a failing check shows first.
+    resp.headers.set("Cache-Control", "no-store")
     return resp^
 
 
