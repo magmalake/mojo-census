@@ -199,7 +199,8 @@ zstd-mojo 0.1.5 they find their shared libraries without `CONDA_PREFIX`),
 though Postgres and `git` come from the pixi environment.
 
 ```sh
-pixi run build      # build/orca, build/{gharchive,mojo_repos,mojo_history,mojo_activity,mojo_stats}, build/console
+pixi run build      # build/orca, build/console, build/{gharchive,mojo_repos,...}: links to two multi-call binaries
+pixi run build-gharchive   # one program alone (build-orca, build-console, build-mojo-stats...)
 pixi run test       # version ordering, history and tag parsing, events, activity, GitHub stats
 ```
 
