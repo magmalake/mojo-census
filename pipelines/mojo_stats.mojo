@@ -1,4 +1,5 @@
-"""The mojo_stats pipeline: every Mojo repository's numbers, each week.
+"""Fetches every Mojo repository's stars, forks, open issues and other GitHub
+numbers each day into mojo.repo_stats.
 
 Daily partitions from 2026-11-01, of which the schedule fills one a week:
 Mondays at 06:00 UTC, for that day (`fills=Current`). The step asks GitHub
@@ -167,9 +168,10 @@ def stats_batch(rows: List[_Stored]) raises -> RecordBatch:
 
 
 def refresh(mut ctx: Ctx, d: Day) raises -> Int:
-    """The step: asks GitHub about every repository in `mojo.repos` and
-    replaces the day's rows in `mojo.repo_stats` with the answers, keeping
-    the other days of the month. Returns the number of repositories."""
+    """Asks GitHub for every Mojo repository's current numbers and replaces the
+    day's rows in mojo.repo_stats.
+    The repositories are those in `mojo.repos`; the other days of the month
+    are kept. Returns the number of repositories."""
     var day = String(d)
     var as_of = days_of(day)
     var repos = _repos(ctx)

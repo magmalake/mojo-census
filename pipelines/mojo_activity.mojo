@@ -1,5 +1,5 @@
-"""The mojo_activity pipeline: each Mojo repository's activity per day, from
-GH Archive, with no API calls.
+"""Counts each Mojo repository's daily activity and releases from GH Archive,
+without calling the GitHub API.
 
 Daily from 2023-01-01 and a sensor on `gharchive.repo_hour`, `gharchive.releases` and `mojo.repos`:
 each day gharchive loads starts a run for that day, and so does each
@@ -143,10 +143,12 @@ def _pair(repo: String, day: Int64) -> String:
 
 
 def activity(mut ctx: Ctx, d: Day) raises -> Int:
-    """The step: computes the day's activity for every member of
-    `mojo.repos`, catches up members not seen before over all the other days
-    loaded, and replaces those (repository, day) rows in `mojo.activity` and
-    `mojo.releases`. Returns the number of activity rows computed."""
+    """Computes the day's activity for every Mojo repository and catches up new
+    repositories over all earlier days.
+    The repositories are the members of `mojo.repos`; those not seen before
+    are computed over all the other days loaded. It replaces those
+    (repository, day) rows in `mojo.activity` and `mojo.releases`. Returns
+    the number of activity rows computed."""
     var day = String(d)
     var key_day = days_of(day)
     var members = _members(ctx)

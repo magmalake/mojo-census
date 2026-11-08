@@ -1,4 +1,5 @@
-"""The mojo_repos pipeline: Mojo repositories found in `gharchive.candidates`.
+"""Finds new Mojo repositories among each day's GH Archive candidates by asking
+GitHub, and adds them to mojo.repos.
 
 A sensor: each day gharchive commits starts a run for that day. The step
 reads the day's rows of `gharchive.candidates` (which gharchive's hour tasks
@@ -189,9 +190,10 @@ def _repos_batch(found: List[_Found], known: Dict[String, Bool]) raises -> Tuple
 
 
 def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
-    """The step: checks the day's new candidates with GitHub, within the API
-    budget, and appends the Mojo repositories to `mojo.repos` and every
-    answer to `mojo.checked`. Returns the number of repositories added.
+    """Checks the day's new candidates with GitHub, within the API budget, and
+    adds the Mojo ones to mojo.repos.
+    Every answer goes to `mojo.checked`. Returns the number of repositories
+    added.
 
     Rerunning a day, or running overlapping days, adds nothing twice: a
     repository already in `mojo.repos`, or already answered, is skipped."""

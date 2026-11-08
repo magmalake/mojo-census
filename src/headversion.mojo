@@ -241,9 +241,10 @@ def pick_head(
 
 
 def read_head_version(repo: String) raises -> HeadVersion:
-    """Clones `repo` from GitHub and reads its HEAD. Errors (a repository
-    gone, a failed clone) come back in `error`, so one bad repository doesn't
-    fail the rest of its run."""
+    """Clones one repository on a worker and reads the Mojo version and
+    dependencies its latest commit states.
+    Errors (a repository gone, a failed clone) come back in `error`, so one
+    bad repository doesn't fail the rest of its run."""
     var out = HeadVersion.empty(repo)
     var dir: String = ""
     try:

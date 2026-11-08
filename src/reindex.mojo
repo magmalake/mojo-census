@@ -44,8 +44,10 @@ def index_job(day: String, hour: Int, snapshot: Int64, marker: Bool) -> String:
 
 
 def index_hour(job: String) raises -> IndexFiles:
-    """On a worker: one hour of `gharchive.events` (at the snapshot in `job`,
-    `day\\nhour\\nsnapshot[\\nmarker]`) as index files, uncommitted."""
+    """Rebuilds one hour's candidates, repo_hour and releases rows from the
+    stored events on a worker, uncommitted.
+    It reads `gharchive.events` at the snapshot in `job`
+    (`day\\nhour\\nsnapshot[\\nmarker]`) and writes index files."""
     # The same parts as `index_job` wrote, in order; the marker is optional
     # and on when absent.
     var parts = job.split("\n")

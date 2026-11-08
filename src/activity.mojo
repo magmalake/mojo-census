@@ -234,9 +234,10 @@ def _in_filter(column: String, repos: Dict[String, Bool]) -> String:
 
 
 def day_activity(job: String) raises -> DayActivity:
-    """On a worker: one day of `gharchive.repo_hour` and `gharchive.releases`
-    (at the step's pinned snapshots) for the repositories in `job`
-    (`encode_job`)."""
+    """Counts one day's activity and releases for a list of repositories on a
+    worker.
+    It reads `gharchive.repo_hour` and `gharchive.releases` (at the step's
+    pinned snapshots) for the repositories in `job` (`encode_job`)."""
     var t0 = perf_counter_ns()
     var lines = job.split("\n")
     var day = String(lines[0])

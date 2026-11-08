@@ -51,10 +51,11 @@ def merged_rows(batches: List[RecordBatch]) raises -> RecordBatch:
 
 
 def merge_repo_hour(job: String) raises -> IndexFiles:
-    """On a worker: the uncommitted files in `job` (paths, one a line, in
-    hour order) as one file sorted by (repo, actor, hour), which replaces
-    them. `repo_hour` of the answer is that file's entry, none if the files
-    had no rows."""
+    """Merges a day's uncommitted repo_hour files into one sorted file on a
+    worker.
+    The files are the paths in `job` (one a line, in hour order); the new
+    file is sorted by (repo, actor, hour) and replaces them. `repo_hour` of
+    the answer is that file's entry, none if the files had no rows."""
     var t0 = perf_counter_ns()
     # Files are read back through the table's own `FileIO`, the way they were
     # written: they are not in any snapshot yet, so a scan can't find them.

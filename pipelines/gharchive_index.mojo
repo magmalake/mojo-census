@@ -1,6 +1,9 @@
-"""The gharchive_index pipeline: `gharchive.candidates`, `gharchive.repo_hour`
-and `gharchive.releases` for days whose events were loaded before gharchive
-wrote them.
+"""Builds the candidates, repo_hour and releases tables from stored events, for
+days loaded before gharchive built them.
+
+The gharchive_index pipeline fills `gharchive.candidates`,
+`gharchive.repo_hour` and `gharchive.releases` for days whose events were
+loaded before gharchive wrote them.
 
 A one-off, run by hand (`orca backfill gharchive_index 2026-10-01..2026-11-04`).
 For each day, a dista task per hour reads that hour of `gharchive.events` once
@@ -49,7 +52,8 @@ comptime IndexTasks = Tasks[IndexHour]
 
 
 def index_day(mut ctx: Ctx, d: Day) raises -> Int64:
-    """The step: one day's 24 hours of index files, committed in hour order.
+    """Rebuilds one day's candidates, repo_hour and releases rows from its
+    stored events, committed in hour order.
     Returns the day's `repo_hour` row count (0 for a day with no events)."""
     var day = String(d)
     var events = table(ctx, EVENTS)
