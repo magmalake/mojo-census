@@ -384,7 +384,7 @@ mojo_stats. The worker holds no database credentials and needs only outbound
 HTTPS to the UI and to the bucket, no inbound ports. The census runs it on
 "bgent", an Apple-silicon Mac running Docker: arm64 like the CAX21, so the same
 image. (orca's [docs/workers.md](https://github.com/magmalake/orca.mojo/blob/main/docs/workers.md)
-and the [Workers page](https://magmalake.org/s/orca/docs/workers) cover the
+and the [Workers page](https://mlake.dev/s/orca/docs/workers) cover the
 general case; remote workers need orca 0.14.0.)
 
 On the server, a token for the pool, printed once (copy it to the worker

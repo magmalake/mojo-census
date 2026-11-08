@@ -58,19 +58,20 @@ secrets = { GITHUB_TOKEN = "orca/github-token" }
 # GIT_LOW_SPEED_SECONDS (60). A repository that still fails is logged and
 # skipped for the run.
 #
-# One clone at a time on the CAX21 while these pipelines move from bgent to
-# the server: their first runs there catch up all 500+ repositories, next to
-# gharchive's fill, and a full clone of a large repository (modular/modular)
-# can take GBs. Raise to 3 again once orca's run pages show the peak
-# (magmalake/orca.mojo#200).
-env = { DISTA_WORKER_SLOTS = "1" }
+# These three run on the bgent worker pool, a second machine (README, "A
+# second machine"). With no worker up, their runs wait ("waiting for a
+# worker of pool bgent").
+placement = "worker:bgent"
+env = { DISTA_WORKER_SLOTS = "3" }
 
 [pipelines.mojo_versions]
 # Blobless clones of the repositories whose version is unknown, one dista
-# task each; no GitHub API, so no token. One at a time, like mojo_history.
-env = { DISTA_WORKER_SLOTS = "1" }
+# task each; no GitHub API, so no token. On the bgent pool, like mojo_history.
+placement = "worker:bgent"
+env = { DISTA_WORKER_SLOTS = "3" }
 
 [pipelines.mojo_activity]
+placement = "worker:bgent"
 env = { DISTA_WORKER_SLOTS = "3" }
 
 # Mondays at 06:00 UTC; one GET /repos/{owner}/{repo} per repository, which
