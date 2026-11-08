@@ -13,10 +13,13 @@ max_runs = 1
 
 [pipelines.gharchive]
 # Fill the whole range (from the first partition to yesterday) by itself,
-# oldest day first, one fill run at a time on top of max_runs.
+# oldest day first, two fill runs at a time on top of max_runs: while one
+# run does its day's serial merge and commit, the other keeps downloading.
+# On the CAX21 two runs at 2 and 2 (below) went from 21.8 to about 32 days an
+# hour (2026-11-07), and to about 65 with GHARCHIVE_EVENTS off.
 fills = "all"
 fill_order = "oldest"
-fill_max_runs = 1
+fill_max_runs = 2
 # DISTA_WORKER_SLOTS: dista workers in one process. GHARCHIVE_PARALLEL: hours
 # in flight at once; its default of 16 is sized for four AWS instances. Keep
 # the two equal. Before #37 an hour in flight took 2 GB or more: on the CAX21
@@ -42,10 +45,16 @@ fill_max_runs = 1
 # rows either way. An hour in flight then takes about 200 MB
 # (HOUR_INDEX_MEMORY_MB) instead of 450 MB. The registry hash doesn't change,
 # so runs done either way count. README, "Without the events".
-env = { DISTA_WORKER_SLOTS = "4", GHARCHIVE_PARALLEL = "4" }
+#
+# What the server runs: two fill runs at 2 and 2, four hours in flight on the
+# four cores (the CPU, not memory, is the limit, at 2.7 of 8 GB), and the raw
+# events off: the site and the mojo_* pipelines read only the derived tables.
+env = { DISTA_WORKER_SLOTS = "2", GHARCHIVE_PARALLEL = "2", GHARCHIVE_EVENTS = "off" }
 
 [pipelines.gharchive_index]
-env = { DISTA_WORKER_SLOTS = "3" }
+# Paused on the server: with GHARCHIVE_EVENTS off it has no new raw events to
+# index; it only covers days whose events were kept.
+env = { DISTA_WORKER_SLOTS = "1" }
 
 [pipelines.mojo_repos]
 # With a token mojo_repos checks 1000 candidates a run, 25 without.
