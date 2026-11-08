@@ -11,7 +11,7 @@ from std.testing import TestSuite, assert_equal, assert_true
 from std.time import perf_counter_ns
 
 from iceberg.batch import ColumnBuilder, batch_of
-from iceberg.catalog.filesystem import FilesystemCatalog
+from iceberg.catalog.filesystem import FilesystemCatalog, Table
 from iceberg.schema import Schema
 from iceberg.values import Datum
 
@@ -26,7 +26,7 @@ from lake import (
     ts,
     ts_or_null,
 )
-from model import libraries
+from model import Sources, count_days, libraries
 from overview import Builder, top_gains
 
 comptime REPOS_NO_TOPICS = (
@@ -283,6 +283,56 @@ def test_duplicate_repo_rows_keep_numbers_with_names() raises:
     assert_equal(ov.commits_30, 4)
     assert_equal(ov.lines, 1110)
     _ = run(String("rm -rf '", dir, "'"))
+
+
+def _days_table(
+    mut cat: FilesystemCatalog, name: String, keys: List[String]
+) raises -> Table:
+    """A table with a snapshot per entry of `keys`, each naming those
+    partitions in `orca.partitions` as orca's commits do."""
+    var s = Schema.parse(
+        '{"schema-id":0,"type":"struct","fields":['
+        '{"id":1,"name":"n","required":false,"type":"long"}]}'
+    )
+    var t = cat.create_table("gharchive", name, s)
+    for _ in range(len(keys)):
+        var c = ColumnBuilder.of(s, 1)
+        c.add(Datum.long_(1))
+        _ = t.append([batch_of([c^])])
+    for i in range(len(keys)):
+        t.metadata.snapshots[i].summary["orca.partitions"] = keys[i]
+    return t^
+
+
+def test_days_loaded_with_and_without_the_events() raises:
+    var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-days-", perf_counter_ns())
+    var cat = FilesystemCatalog.local(dir)
+    # Two days loaded with the events on: both tables name them (the events
+    # an hour a commit, repo_hour a day), as on today's lake.
+    var events = _days_table(cat, "events", ["2024-06-11", "2024-06-11", "2024-06-12"])
+    var on_rh = _days_table(cat, "repo_hour_on", ["2024-06-11", "2024-06-12"])
+    var only_events = Sources()
+    count_days(only_events, events.copy(), None)
+    var both = Sources()
+    count_days(both, events.copy(), on_rh^)
+    assert_equal(only_events.days, 2)
+    assert_equal(both.days, only_events.days)
+    assert_equal(both.first_day, only_events.first_day)
+    assert_equal(both.last_day, only_events.last_day)
+    # Then a day with GHARCHIVE_EVENTS=off: only repo_hour names it, and
+    # it counts; so does a lake whose events table is gone.
+    var off_rh = _days_table(
+        cat, "repo_hour_off", ["2024-06-11", "2024-06-12", "2024-06-13", "backfill"]
+    )
+    var after = Sources()
+    count_days(after, events.copy(), off_rh.copy())
+    assert_equal(after.days, 3)
+    assert_equal(after.first_day, "2024-06-11")
+    assert_equal(after.last_day, "2024-06-13")
+    var no_events = Sources()
+    count_days(no_events, None, off_rh^)
+    assert_equal(no_events.days, 3)
+    assert_equal(no_events.last_day, "2024-06-13")
 
 
 def main() raises:

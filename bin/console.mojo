@@ -2066,7 +2066,8 @@ comptime DIAGRAM = """flowchart LR
   end
   site([mojourney.dev])
   gha --> gharchive
-  gharchive --> events & candidates & repo_hour & gh_releases
+  gharchive --> candidates & repo_hour & gh_releases
+  gharchive -. GHARCHIVE_EVENTS=on .-> events
   index -.-> candidates & repo_hour & gh_releases
   candidates --> mojo_repos
   api --> mojo_repos
@@ -2112,26 +2113,29 @@ comptime HOW_PIPELINES = (
     "<div class=prose>"
     "<p class='mute note'>Rounded boxes are the sources and this site,"
     " rectangles the pipelines, cylinders the Iceberg tables; dotted arrows are"
-    " orca's scheduling and the one-off gharchive_index. On a narrow screen,"
+    " orca's scheduling, the one-off gharchive_index and the raw events, kept"
+    " only with GHARCHIVE_EVENTS on. On a narrow screen,"
     " scroll it sideways.</p>"
     "<h2>The pipelines</h2><ul><li><a href='"
     + ORCA_UI
     + "/pipelines/gharchive' rel=noopener>gharchive</a> loads <a"
     " href='https://www.gharchive.org' rel=noopener>GH Archive</a>, every public"
-    " GitHub event an hour at a time, into <code>gharchive.events</code>, daily at"
-    " 03:00 UTC for the day before. Each hour is a <a"
-    " href='https://mlake.dev/s/dista/docs' rel=noopener>dista</a> task that"
-    " downloads, gunzips, parses and writes its Parquet files as the hour streams"
-    " in, and builds the hour's rows of <code>gharchive.candidates</code> (events"
-    " that hint at Mojo), <code>gharchive.repo_hour</code> (event counts per"
-    " repository, person and hour) and <code>gharchive.releases</code>; the step"
-    " commits the hours in order. It is filling every day since 2023-01-01, one"
+    " GitHub event an hour at a time, daily at 03:00 UTC for the day before. Each"
+    " hour is a <a href='https://mlake.dev/s/dista/docs' rel=noopener>dista</a>"
+    " task that downloads, gunzips and parses the hour as it streams in, and"
+    " builds the hour's rows of <code>gharchive.candidates</code> (events that"
+    " hint at Mojo), <code>gharchive.repo_hour</code> (event counts per"
+    " repository, person and hour) and <code>gharchive.releases</code> from"
+    " each hour as it is parsed; the step commits those three tables once a"
+    " day. The raw events are kept, as Parquet files of"
+    " <code>gharchive.events</code> committed an hour at a time, only when"
+    " <code>GHARCHIVE_EVENTS</code> is on. It is filling every day since 2023-01-01, one"
     " day a run, oldest first, in about 1.5 to 3 minutes a day. Each hour's"
     " download has timeouts (for connecting, for a stalled read and for the whole"
     " hour) and up to four retries with backoff.</li>"
     "<li>gharchive_index, a one-off run by hand, builds those three tables from"
     " <code>gharchive.events</code> for the days loaded before gharchive wrote"
-    " them.</li>"
+    " them (days whose raw events were kept).</li>"
     "<li><a href='"
     + ORCA_UI
     + "/pipelines/mojo_repos' rel=noopener>mojo_repos</a> is a sensor on"

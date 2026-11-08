@@ -305,10 +305,11 @@ written to `gharchive.events`, and the table isn't created if it is missing.
   pipeline's registry hash, so the hash, and which runs count as done, is
   the same whichever way it is set.
 - What reads `gharchive.events` gets no new days: gharchive_index (paused;
-  it has nothing to do for a day without events), the console's count of
-  loaded days (`model.read_days`, from the events' snapshots), and the
-  tools (`dump_index gharchive.events`, `events_digest`,
-  `compare_activity`, `drop_run`).
+  it has nothing to do for a day without events) and the tools
+  (`dump_index gharchive.events`, `events_digest`, `compare_activity`,
+  `drop_run`). The console's count of loaded days (`model.read_days`)
+  counts the days named by the snapshots of the events or of
+  `gharchive.repo_hour`, which gharchive commits either way.
 
 It is set in the environment of the server's gharchive pipeline (orca.toml's
 `env` is where it would go).
