@@ -158,6 +158,11 @@ struct Overview(Movable):
     var est_families: List[String]
     var est_family_repos: List[Int]
     var est_family_active: List[Int]
+    var unread: Int
+    """Repositories in the `unknown` bucket whose history isn't read yet
+    (the rest of `unknown` were read: a manifest that names no version)."""
+    var est_unread: Int
+    """The same in `est_buckets`: not read, and nothing to estimate from."""
     var months: List[String]
     var lines_series: List[Int64]
     var repos_series: List[Int64]
@@ -191,6 +196,8 @@ struct Overview(Movable):
         self.est_families = List[String]()
         self.est_family_repos = List[Int]()
         self.est_family_active = List[Int]()
+        self.unread = 0
+        self.est_unread = 0
         self.months = List[String]()
         self.lines_series = List[Int64]()
         self.repos_series = List[Int64]()
@@ -365,6 +372,10 @@ struct Builder(Movable):
             fg.add(family_of(a.version, why), a.version, is_active)
             # With the estimate: a repository with no version gets its date's.
             var ev = a.version if a.version.byte_length() > 0 else a.estimate
+            if a.commits == 0 and a.version.byte_length() == 0:
+                o.unread += 1
+                if ev.byte_length() == 0:
+                    o.est_unread += 1
             ebg.add(bucket_of(ev, why), ev, is_active)
             efg.add(family_of(ev, why), ev, is_active)
         _order(bg, True)
