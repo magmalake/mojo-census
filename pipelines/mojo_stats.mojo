@@ -1,8 +1,9 @@
 """Fetches every Mojo repository's stars, forks, open issues and other GitHub
 numbers each day into mojo.repo_stats.
 
-Daily partitions from 2026-11-01, of which the schedule fills one a week:
-Mondays at 06:00 UTC, for that day (`fills=Current`). The step asks GitHub
+Daily partitions from 2026-11-08, the first day it ran, each filled at
+06:00 UTC for that day (`fills=Current`); GitHub only gives the current
+numbers, so days before it can't be filled. The step asks GitHub
 about each repository in `mojo.repos` (`GET /repos/{owner}/{repo}`, one
 request each) and writes one row per repository to `mojo.repo_stats`,
 `as_of` the run's day, partitioned by month. A repository that is gone,
@@ -253,15 +254,15 @@ comptime Refresh = Step[
     writes=[REPO_STATS],
 ]
 # A `Cron` schedule fires on its own. `fills=Current` makes a fire fill the
-# partition its time falls in (Monday itself, not the day before, which is
+# partition its time falls in (the day itself, not the day before, which is
 # the default), and `catchup=False` starts only the latest fire if the
 # scheduler was down for several: GitHub only gives the current numbers, so a
-# late run can't recover a missed week's anyway.
+# late run can't recover a missed day's anyway.
 comptime MojoStats = Pipeline[
     "mojo_stats",
     Refresh,
-    partitions=Daily["2026-11-01"],
-    schedule=Cron["0 6 * * 1"],  # Mondays 06:00 UTC, for that day
+    partitions=Daily["2026-11-08"],
+    schedule=Cron["0 6 * * *"],  # 06:00 UTC, for that day
     fills=Current,
     catchup=False,
 ]

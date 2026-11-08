@@ -83,7 +83,7 @@ env = { DISTA_WORKER_SLOTS = "3" }
 placement = "worker:bgent"
 env = { DISTA_WORKER_SLOTS = "3" }
 
-# Mondays at 06:00 UTC; one GET /repos/{owner}/{repo} per repository, which
+# Daily at 06:00 UTC; one GET /repos/{owner}/{repo} per repository, which
 # unauthenticated is 60 an hour.
 [pipelines.mojo_stats]
 secrets = { GITHUB_TOKEN = "orca/github-token" }

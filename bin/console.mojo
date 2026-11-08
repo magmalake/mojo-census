@@ -2222,14 +2222,14 @@ comptime HOW_PIPELINES = (
     "<li><a href='"
     + ORCA_UI
     + "/pipelines/mojo_stats' rel=noopener>mojo_stats</a> asks the GitHub API"
-    " about every repo each Monday (one request each) and keeps the stars, forks,"
-    " issues and topics week by week in <code>mojo.repo_stats</code>.</li></ul>"
+    " about every repo each day (one request each) and keeps the stars, forks,"
+    " issues and topics day by day in <code>mojo.repo_stats</code>.</li></ul>"
     "<p>Clones, in mojo_history and mojo_versions, have a time limit, retries"
     " with backoff and a minimum transfer speed; a repository that still fails"
     " is logged and skipped for that run.</p>"
     "<h2>orca and the site</h2>"
     "<p>orca's scheduler starts each run: on a schedule (gharchive daily,"
-    " mojo_stats weekly), when a table it watches gains a snapshot (the sensors"
+    " mojo_stats daily too), when a table it watches gains a snapshot (the sensors"
     " and the keyed pipelines), or to fill days not run yet. It keeps the runs,"
     " their steps, attempts and logs in Postgres, and its UI at <a href='"
     + ORCA_UI
