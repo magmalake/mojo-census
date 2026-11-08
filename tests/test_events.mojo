@@ -4,11 +4,11 @@
 """
 
 from std.memory.alloc import unsafe_alloc
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 from cols import i64_at, str_at
 from deflate import gzip
-from events import Collect, decode_gz, parse_events
+from events import Collect, decode_gz, hour_overdue, not_found, parse_events
 from gzstream import GzInput, Whole
 
 
@@ -77,6 +77,24 @@ def test_trickled_download_gives_the_same_rows() raises:
                 assert_true(x.column(c).validity == y.column(c).validity)
         assert_equal(i64_at(sink.batches[0].column(0), 7), 5007)
         assert_equal(str_at(sink.batches[0].column(4), 7), "u7")
+
+
+def test_a_404_is_told_apart() raises:
+    # The text fetch._open raises for a 404, after hour_task's prefix too.
+    var url = "https://data.gharchive.org/2025-06-12-17.json.gz"
+    assert_true(not_found(String("GET ", url, ": HTTP 404")))
+    assert_true(not_found(String("2025-06-12 hour 17: GET ", url, ": HTTP 404")))
+    assert_false(not_found(String("GET ", url, ": HTTP 403")))
+    assert_false(not_found(String("GET ", url, ": HTTP 503 (gave up after 5 tries)")))
+
+
+def test_an_hour_is_overdue_48_hours_after_it_ends() raises:
+    # 2025-06-12 17:00-18:00 UTC ends at 1749751200.
+    var ended = 1749751200
+    assert_false(hour_overdue("2025-06-12", 17, ended))
+    assert_false(hour_overdue("2025-06-12", 17, ended + 48 * 3600))
+    assert_true(hour_overdue("2025-06-12", 17, ended + 48 * 3600 + 1))
+    assert_true(hour_overdue("2025-06-12", 17, 1762560000))  # 2025-11-08
 
 
 def main() raises:

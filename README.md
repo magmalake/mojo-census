@@ -272,6 +272,7 @@ all in the environment (orca.toml's `env`):
 | `GHARCHIVE_IDLE_SECONDS` | 30 | silence on a connection: a stalled read fails after it |
 | `GHARCHIVE_TIMEOUT_SECONDS` | 900 | an hour's download, every try and wait included (not the time the decoder holds it back) |
 | `GHARCHIVE_RETRIES` | 4 | retries after the first try |
+| `GHARCHIVE_MISSING_AFTER_HOURS` | 48 | a 404 for an hour that ended longer ago than this is a gap GH Archive will never fill: with `GHARCHIVE_EVENTS=off` the day is loaded without it (#77) |
 | `GIT_TIMEOUT_SECONDS` | 600 | one clone (or a blobless clone's `git show`): its process group is killed after it |
 | `GIT_RETRIES` | 3 | retries of a clone after the first try |
 | `GIT_LOW_SPEED_LIMIT`, `GIT_LOW_SPEED_SECONDS` | 1000, 60 | git's own stall detector (`http.lowSpeedLimit`, `http.lowSpeedTime`): under 1000 B/s for 60 s aborts the transfer |

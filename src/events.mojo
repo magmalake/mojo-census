@@ -22,10 +22,12 @@ from parquet import RecordBatch
 
 from datafiles import BatchSink, DataFiles, TableWriter
 from eventrows import EventRows, TextColumn
+from days import days_of
 from fetch import Download
 from deflate import MARGIN, GzipReader, InflateStatus
 from gzstream import GzInput, Whole
 from hourindex import HourIndex, write_index
+from retry import env_int
 from jscan import Range, find_newline, scan_event, text, timestamp_micros
 
 comptime ROWS_PER_BATCH = 50_000
@@ -51,6 +53,23 @@ def hour_url(day: String, hour: Int) -> String:
     zero-padded in GH Archive's names."""
     var base = getenv("GHARCHIVE_BASE", "https://data.gharchive.org")
     return String(base, "/", day, "-", hour, ".json.gz")
+
+
+def not_found(err: String) -> Bool:
+    """Whether a fetch failed on a 404, which `fetch._open` raises at once,
+    without retrying, as `GET <url>: HTTP 404`."""
+    return err.endswith(": HTTP 404")
+
+
+def hour_overdue(day: String, hour: Int, now_s: Int) raises -> Bool:
+    """Whether GH Archive should have published the hour by `now_s` (Unix
+    seconds): the hour ended more than `GHARCHIVE_MISSING_AFTER_HOURS`
+    (default 48) ago. A 404 then is a gap in the archive, such as
+    2025-06-12's 17:00 (magmalake/mojo-census#77); a 404 for a more recent
+    hour may only mean it isn't published yet, and still fails the day."""
+    var ended = Int(days_of(day)) * 86_400 + (hour + 1) * 3_600
+    var grace = env_int("GHARCHIVE_MISSING_AFTER_HOURS", 48) * 3_600
+    return now_s - ended > grace
 
 
 def parse_hours(spec: String) raises -> List[Int]:

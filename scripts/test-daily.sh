@@ -9,7 +9,9 @@
 #   - a rerun of the day replaces all four tables' rows,
 #   - with GHARCHIVE_EVENTS=off the index rows are the same, nothing is
 #     written to gharchive.events, and a retry (after 2 hours, or after the
-#     index commits) and a rerun leave one copy of the rows.
+#     index commits) and a rerun leave one copy of the rows,
+#   - an hour GH Archive never published is skipped with the events off and
+#     fails the day with them on or while it could still be late.
 #
 #   scripts/test-daily.sh build/gharchive-main build/gharchive
 #
@@ -118,4 +120,22 @@ for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
   [ "$(snaps "$W/new" $t)" = 3 ] || fail "off again: $t not three snapshots"
 done
 [ "$(digest "$W/new" gharchive.events)" = "$ev" ] || fail "off again: events changed"
+echo "== an hour GH Archive never published (#77)"
+# 2025-06-12 17:00 is a 404 for good: with the events off the day loads
+# without it; with them on, or while the hour could still be late, it fails.
+GHARCHIVE_EVENTS=off GHARCHIVE_HOURS=16,17 ORCA_WAREHOUSE=$W/gap \
+  $NEW run --partitions 2025-06-12 > "$W/gap.log" || fail "gap: the day failed"
+grep -q "loaded without 1 hour GH Archive never published (17)" "$W/gap.log" \
+  || fail "gap: hour 17 not named"
+for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
+  [ "$(snaps "$W/gap" $t)" = 1 ] || fail "gap: $t not one snapshot"
+done
+GHARCHIVE_HOURS=17 ORCA_WAREHOUSE=$W/gap-on \
+  $NEW run --partitions 2025-06-12 > "$W/gap-on.log" 2>&1 \
+  && fail "gap: the day loaded with the events on"
+grep -q "with GHARCHIVE_EVENTS=on every hour" "$W/gap-on.log" || fail "gap: no reason (on)"
+GHARCHIVE_EVENTS=off GHARCHIVE_HOURS=17 GHARCHIVE_MISSING_AFTER_HOURS=1000000 \
+  ORCA_WAREHOUSE=$W/gap-late $NEW run --partitions 2025-06-12 > "$W/gap-late.log" 2>&1 \
+  && fail "gap: an hour that could be late was skipped"
+echo "ok: a missing hour"
 echo "all ok"
