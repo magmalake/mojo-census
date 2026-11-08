@@ -134,6 +134,27 @@ def test_unknown_with_a_manifest() raises:
     assert_equal(ov.buckets[0], "unknown")
 
 
+def test_unread() raises:
+    # unknown splits into not read yet (c) and read with a manifest that
+    # names no version (p); a version from the files at HEAD isn't unread.
+    var b = _small()
+    var p = b.add_repo("o/p")
+    b.add_commit(p, _us(2026, 10, 1), 0, 10, 2, "")
+    var h = b.add_repo("o/h")
+    b.set_version(h, "1.1.0", "")
+    var ov = b.finish(6)
+    assert_equal(ov.unread, 1)
+    assert_equal(ov.buckets[len(ov.buckets) - 1], "unknown")
+    assert_equal(ov.bucket_repos[len(ov.buckets) - 1], 2)
+    assert_equal(ov.est_unread, 1)
+    # An estimate for an unread repo takes it out of est_unread only.
+    var e = _small()
+    e.set_version(2, "", "0.4")
+    var eo = e.finish(4)
+    assert_equal(eo.unread, 1)
+    assert_equal(eo.est_unread, 0)
+
+
 def test_estimate_buckets() raises:
     var b = _small()
     # d (no manifest, 2023) gets an estimate; b's detected version stays.

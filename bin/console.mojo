@@ -974,13 +974,100 @@ def _family_donut(c: Cache, active: Bool, estimate: Bool = False) -> String:
             continue
         legend.write(
             "<li><a href='", html_escape(hrefs[i]), "'><i class=sw style='background:", colors[i],
-            "'></i>", html_escape(labels[i]), " <b>", values[i], "</b> <span class=mute>",
+            "'></i>", html_escape(labels[i]),
+            "<sup class=mark title='see the note under the charts'>*</sup>" if _no_version(labels[i]) else "",
+            " <b>", values[i], "</b> <span class=mute>",
             _pct(values[i], total), "</span></a></li>",
         )
     legend.write("</ul>")
     return String(
         "<div class=card><h3>", "Active in the last year" if active else "All repos", "</h3>", svg, legend, "</div>"
     )
+
+
+def _no_version(bucket: String) -> Bool:
+    """The buckets of repos with no version, starred in the legends."""
+    return bucket == "unknown" or bucket == "no-manifest"
+
+
+def _count_of(names: List[String], counts: List[Int], name: String) -> Int:
+    for i in range(len(names)):
+        if names[i] == name:
+            return counts[i]
+    return 0
+
+
+def _and(parts: List[String]) -> String:
+    """`a`, `a and b`, `a, b and c`."""
+    var out = String()
+    for i in range(len(parts)):
+        if i > 0:
+            out += " and " if i == len(parts) - 1 else ", "
+        out += parts[i]
+    return out^
+
+
+def versions_note(ov: Overview, estimate: Bool) -> String:
+    """The footnote under the version donuts: what the starred `unknown` and
+    `no-manifest` slices of all repos are made of, that the census is still
+    reading the histories (while some aren't read), and the link to the
+    estimate. Empty when every repo has a version."""
+    ref names = ov.est_buckets if estimate else ov.buckets
+    ref counts = ov.est_bucket_repos if estimate else ov.bucket_repos
+    var unknown = _count_of(names, counts, "unknown")
+    var none = _count_of(names, counts, "no-manifest")
+    var unread = ov.est_unread if estimate else ov.unread
+    var named_none = unknown - unread
+    if unknown + none == 0:
+        return String()
+    # The first number names its noun: "540 repos don't ..., 36 have ...".
+    var first = unread if unread > 0 else (named_none if named_none > 0 else none)
+    var noun = String(" repo" if first == 1 else " repos")
+    var unk = List[String]()
+    if unread > 0:
+        unk.append(
+            String(_n(Int64(unread)), noun, " doesn't" if unread == 1 else " don't", " have their history read yet")
+        )
+        noun = String()
+    if named_none > 0:
+        unk.append(
+            String(_n(Int64(named_none)), noun, " has" if named_none == 1 else " have", " a manifest that names no Mojo version")
+        )
+        noun = String()
+    var parts = List[String]()
+    if len(unk) > 0:
+        parts.append(String(_and(unk), " (<em>unknown</em>)"))
+    if none > 0:
+        parts.append(
+            String(
+                _n(Int64(none)), noun, " states" if none == 1 else " state",
+                " no version anywhere the census looks (<em>no-manifest</em>)",
+            )
+        )
+    var h = String("<p class='mute note'>* ")
+    if estimate:
+        h += "With no estimate by date either, "
+    if len(parts) == 2:
+        h.write(parts[0], ", and ", parts[1], ".")
+    else:
+        h.write(parts[0], ".")
+    if unread > 0:
+        h.write(
+            " The census is still reading them: ", _n(Int64(ov.with_history)), " of ",
+            _n(Int64(ov.repos)), " histories read.",
+        )
+    if not estimate:
+        var est_left = _count_of(ov.est_buckets, ov.est_bucket_repos, "unknown") + _count_of(
+            ov.est_buckets, ov.est_bucket_repos, "no-manifest"
+        )
+        var filled = unknown + none - est_left
+        if filled > 0:
+            h.write(
+                " <a href='/?estimate=1'>Add the estimate by date</a> to fill in ",
+                "all of them" if est_left == 0 else String(_n(Int64(filled)), " of them"), ".",
+            )
+    h += "</p>"
+    return h^
 
 
 def _legend(names: List[String], colors: List[String], values: List[String]) -> String:
@@ -1153,7 +1240,8 @@ def overview(req: Request, c: Cache) raises -> Response:
                 "The version a repo states: its latest lock file or manifest, else its CI, Docker or"
                 " README files. <em>no-manifest</em> is a repo with nothing there to read (mostly"
                 " early projects from before magic and pixi); <em>unknown</em> has a manifest that"
-                " names no Mojo version, or isn't read yet. Click a slice for its repos.",
+                " names no Mojo version, or its history isn't read yet. The note under the charts"
+                " (<em>*</em>) counts each. Click a slice for its repos.",
             ),
             "</h2><p class=sub>Counting <strong>", "detected and estimated versions" if estimate else "detected versions only",
             "</strong>. <a href='", "/" if estimate else "/?estimate=1", "'>",
@@ -1166,6 +1254,7 @@ def overview(req: Request, c: Cache) raises -> Response:
             ),
             "</p>",
             "<div class=cols>", _family_donut(c, False, estimate), _family_donut(c, True, estimate), "</div>",
+            versions_note(ov, estimate),
         )
         # Growth.
         if len(ov.months) >= 2:
@@ -1374,7 +1463,8 @@ def overview_json(req: Request, c: Cache) raises -> Response:
             out += ","
         out.write(
             '{"bucket":', _q(ov.buckets[i]), ',"repos":', ov.bucket_repos[i],
-            ',"active_repos":', ov.bucket_active[i], "}",
+            ',"active_repos":', ov.bucket_active[i],
+            String(',"unread":', ov.unread) if ov.buckets[i] == "unknown" else String(), "}",
         )
     out += '],"estimated_buckets":['
     for i in range(len(ov.est_buckets)):
@@ -1382,7 +1472,8 @@ def overview_json(req: Request, c: Cache) raises -> Response:
             out += ","
         out.write(
             '{"bucket":', _q(ov.est_buckets[i]), ',"repos":', ov.est_bucket_repos[i],
-            ',"active_repos":', ov.est_bucket_active[i], "}",
+            ',"active_repos":', ov.est_bucket_active[i],
+            String(',"unread":', ov.est_unread) if ov.est_buckets[i] == "unknown" else String(), "}",
         )
     out += '],"families":['
     for i in range(len(ov.families)):
@@ -1390,7 +1481,8 @@ def overview_json(req: Request, c: Cache) raises -> Response:
             out += ","
         out.write(
             '{"family":', _q(ov.families[i]), ',"repos":', ov.family_repos[i],
-            ',"active_repos":', ov.family_active[i], "}",
+            ',"active_repos":', ov.family_active[i],
+            String(',"unread":', ov.unread) if ov.families[i] == "unknown" else String(), "}",
         )
     out.write(
         '],"months":[',
@@ -2117,7 +2209,9 @@ comptime HOW_LEAD = (
     + "/iceberg.mojo' rel=noopener>iceberg.mojo</a> and <a href='"
     + GH
     + "/parquet.mojo' rel=noopener>parquet.mojo</a>; this site reads the"
-    " tables.</p></div>"
+    " tables. The story behind it is in <a"
+    " href='https://mlake.dev/blog/introducing-mojourney'"
+    " rel=noopener>Introducing Mojourney</a>.</p></div>"
 )
 
 comptime DIAGRAM = """flowchart TB
@@ -2352,17 +2446,95 @@ def how(req: Request) raises -> Response:
     )
 
 
+def _census_pr(n: Int) -> String:
+    return _link(String(GH, "/mojo-census/pull/", n), String("#", n))
+
+
 def optimizations(req: Request) raises -> Response:
     var pr_census = String(GH, "/mojo-census/pull/4")
     var pr_parquet = String(GH, "/parquet.mojo/pull/59")
     var pr_ice71 = String(GH, "/iceberg.mojo/pull/71")
+    var dash = String("<span class=mute>&ndash;</span>")
     var h = _how_head("optimizations")
     h.write(
-        "<p class=lead>The first runs on AWS showed each hour's task bound to one of the worker's",
-        " four cores, with the Parquet write its largest stage. These changes spread the work",
-        " over the cores and stopped copying it; each row links its pull request and the",
-        " measurement table in its description.</p>",
-        "<h2>One gharchive hour on AWS</h2>",
+        "<p class=lead>The census runs on one Hetzner CAX21 (4 ARM vCPUs, 8 GB, &euro;12.49 a month),",
+        " with a Mac as an orca remote worker for the git histories. There gharchive loads a day of",
+        " GH Archive in about 1.5&ndash;3 minutes, peaking at 731 MB at the median and 801 MB at most,",
+        " with about 2.4 cores busy (",
+        _link(String(ORCA_UI, "/pipelines/gharchive"), "its Resources card"),
+        ", over the last 20 runs). It keeps only the index tables it derives from each hour, not the",
+        " raw events, which were 97% of the bucket at about 1.1 GB a day. The backfill finished all",
+        " 1,407 days, 2023-01-01 to 2026-11-07, on 2026-11-08.</p>",
+        "<h2>How it got there</h2>",
+        "<p class=sub>Since the first runs on AWS, newest last; each row links its pull request,",
+        " whose description has the measurements.</p>",
+        "<div class=tbl><table><thead><tr><th>Change</th><th>What it did</th>",
+        "<th>Measured</th><th>PR</th></tr></thead><tbody>",
+        _change(
+            "Bounded table history",
+            "<code>gharchive.events</code> keeps a week of snapshots and every table its last 100"
+            " metadata files; <code>orca_maintain</code> expires the rest every day.",
+            dash,
+            _census_pr(20),
+        ),
+        _change(
+            "Index events while parsing",
+            "Each hour task writes <code>candidates</code>, <code>repo_hour</code> and"
+            " <code>releases</code> from the events it parses, instead of a later pass over"
+            " <code>gharchive.events</code>.",
+            "Same rows as the old path for all 143,015 repos of 2023-01-10",
+            _census_pr(21),
+        ),
+        _change(
+            "Index tables committed once a day",
+            "The three index tables get one commit each at the end of the day, with all the hours'"
+            " files; only <code>gharchive.events</code> still committed every hour.",
+            "Removes three of four hourly commits, which took about 1.7 s an hour (41 s of an 81 s day on AWS)",
+            _census_pr(24),
+        ),
+        _change(
+            "Smaller Parquet",
+            "Events sorted by (repo, type) and compressed with zstd 9; <code>repo_hour</code> merged"
+            " into one sorted file a day.",
+            "Events 311 to 227 bytes a row (&minus;27%), <code>repo_hour</code> &minus;24% over 3 merged"
+            " hours; the hour task 2.35 to 2.80 s",
+            _census_pr(29),
+        ),
+        _change(
+            "An hour in about 450 MB",
+            "A file's rows in fixed 4 MB string pieces, a sort of row numbers only, 16 MB row groups,"
+            " and the download memory-mapped and released as it is decoded.",
+            "A busy 2023 hour alone 965 to 525 MB; a day 1,969 MB and 52.9 s with 2 hours in flight,"
+            " 1,826 MB and 38.9 s with 4 (Linux, 4 vCPU, 8 GB)",
+            String(_census_pr(44), " (", _link(String(GH, "/mojo-census/issues/37"), "#37"), ")"),
+        ),
+        _change(
+            "4 hours in flight",
+            "gharchive runs 4 hours at a time on the CAX21 instead of 2.",
+            "1.8 GB at peak on a busy 2023 day, 26% faster than 2 (from #44)",
+            _census_pr(59),
+        ),
+        _change(
+            "Index only (<code>GHARCHIVE_EVENTS=off</code>)",
+            "Stops writing <code>gharchive.events</code>, 97% of the bucket at about 1.1 GB a day; the"
+            " index tables are unchanged.",
+            "An hour in flight about 200 MB instead of 450 MB; the backfill went from about 22 to"
+            " 58&ndash;65 days an hour on the CAX21 with two fill runs",
+            _census_pr(70),
+        ),
+        _change(
+            "Days with missing hours",
+            "A day loads without the hours GH Archive never published (a 404 more than 48 hours old),"
+            " so the backfill could finish.",
+            dash,
+            _census_pr(78),
+        ),
+        "</tbody></table></div>",
+        "<h2>The first runs, on AWS</h2>",
+        "<p>Each hour's task was bound to one of the worker's four cores, with the Parquet write its",
+        " largest stage. These changes spread the work over the cores and",
+        " stopped copying it.</p>",
+        "<h3>One gharchive hour on AWS</h3>",
         "<p class=sub>c7g.xlarge workers, about 85,000 events an hour, median of 24 hours.</p>",
         "<div class=tbl><table><thead><tr><th>Stage</th><th class=num>Before (",
         _link(String(ORCA_UI, "/runs/36"), "run 36"), ")</th><th class=num>After (",
@@ -2374,11 +2546,13 @@ def optimizations(req: Request) raises -> Response:
         _stage("write", "570 ms", "256 ms"),
         _stage("commit", "486 ms", "683 ms"),
         "</tbody></table></div>",
-        "<p class='mute note'>Commit time grows with the table's snapshot count: ",
+        "<p class='mute note'>Commit time grew with the table's snapshot count: ",
         _link(String(ORCA_UI, "/runs/133"), "run 133"),
-        ", after the latest release, measured 1,207 ms for the commit with the other stages",
-        " unchanged. Under investigation.</p>",
-        "<h2>The changes</h2><div class=tbl><table><thead><tr><th>Change</th><th>What it did</th>",
+        " measured 1,207 ms for the commit, at about 889 snapshots, with the other stages unchanged.",
+        " Bounded history (", _census_pr(20), ") stopped the growth, the index tables now commit once a",
+        " day (", _census_pr(24), "), and with the events off (", _census_pr(70), ") a day makes just",
+        " those three commits.</p>",
+        "<h3>The changes</h3><div class=tbl><table><thead><tr><th>Change</th><th>What it did</th>",
         "<th>Measured (Apple M4)</th><th>PR</th></tr></thead><tbody>",
         _change(
             "mojo-census #4",
