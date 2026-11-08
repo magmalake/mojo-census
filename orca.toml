@@ -36,6 +36,12 @@ fill_max_runs = 1
 # GHARCHIVE_RETRIES (4) after the first try, with backoff 1 s, 2 s, 4 s ...
 # up to 30 s (README, "Timeouts and retries"). Before #49 a stalled read
 # had no timeout, and a fill run waited 5 h 39 m on one.
+#
+# GHARCHIVE_EVENTS (on): off stops writing gharchive.events (1.1 GB a day,
+# 97% of the bucket) and keeps candidates, repo_hour and releases, the same
+# rows either way. An hour in flight then takes about 200 MB
+# (HOUR_INDEX_MEMORY_MB) instead of 450 MB. The registry hash doesn't change,
+# so runs done either way count. README, "Without the events".
 env = { DISTA_WORKER_SLOTS = "4", GHARCHIVE_PARALLEL = "4" }
 
 [pipelines.gharchive_index]

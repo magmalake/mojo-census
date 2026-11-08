@@ -5,6 +5,8 @@ resolved to the census's repositories here); and per repository its
 activity by month (mojo.activity), releases (mojo.releases) and tags
 (mojo.tags)."""
 
+from iceberg.catalog.filesystem import Table
+
 from cols import bool_at, col, has_col, i32_at, i64_at, is_valid, str_at, strs_at
 from deps import RepoDep, resolve
 from historyrows import repo_dep_rows
@@ -656,7 +658,8 @@ struct Sources(Copyable, Movable):
     var as_of_ms: Int64
     """The newest snapshot time of those tables."""
     var days: Int
-    """GH Archive days loaded into gharchive.events (`read_days`)."""
+    """GH Archive days loaded, by gharchive.events' or gharchive.repo_hour's
+    snapshots (`read_days`)."""
     var first_day: String
     var last_day: String
 
@@ -694,13 +697,31 @@ def read_sources() raises -> Sources:
 
 
 def read_days(mut src: Sources) raises:
-    """Count the GH Archive days gharchive.events holds into `src`: the days
-    its snapshots' `orca.partitions` name."""
-    var t = try_load("gharchive", "events")
-    if not t:
-        return
+    """Count the GH Archive days loaded into `src`: the days the snapshots
+    of gharchive.events and gharchive.repo_hour name (`count_days`)."""
+    count_days(src, try_load("gharchive", "events"), try_load("gharchive", "repo_hour"))
+
+
+def count_days(
+    mut src: Sources, events: Optional[Table], repo_hour: Optional[Table]
+) raises:
+    """The days the snapshots' `orca.partitions` name, of either table.
+    gharchive commits both for every day it loads, so with the events on
+    they name the same days, and gharchive.repo_hour alone keeps counting
+    the days loaded with `GHARCHIVE_EVENTS=off`; the events still count the
+    days loaded before that, should their repo_hour snapshots be gone."""
     var seen = Dict[String, Bool]()
-    for ref s in t.value().metadata.snapshots:
+    if events:
+        _snapshot_days(events.value(), seen, src)
+    if repo_hour:
+        _snapshot_days(repo_hour.value(), seen, src)
+    src.days = len(seen)
+
+
+def _snapshot_days(t: Table, mut seen: Dict[String, Bool], mut src: Sources) raises:
+    """Adds the days `t`'s snapshots name to `seen`, and widens `src`'s
+    first and last day to them."""
+    for ref s in t.metadata.snapshots:
         for key in s.summary.get("orca.partitions", String("")).split(","):
             var k = String(key.strip())
             # A day looks like 2026-10-13; other keys aren't counted.
@@ -710,7 +731,6 @@ def read_days(mut src: Sources) raises:
                     src.first_day = k
                 if k > src.last_day:
                     src.last_day = k
-    src.days = len(seen)
 
 
 @fieldwise_init

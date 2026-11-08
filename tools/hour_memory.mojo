@@ -10,7 +10,9 @@ file's size for the pipeline's figure),
 each, `index` also builds the hour's `HourIndex`, `sort` also sorts each
 batch, `write` also writes the events (into `ORCA_WAREHOUSE`, whose tables a
 gharchive run made), and `full` also writes the index tables, which is what
-an hour's task does. Prints the peak RSS (`getrusage`) at the end, in MB
+an hour's task does. `noevents` is what an hour's task does with
+`GHARCHIVE_EVENTS=off`: the parse builds no rows, only the index, and writes
+the index tables. Prints the peak RSS (`getrusage`) at the end, in MB
 (magmalake/mojo-census#37 has the figures).
 """
 
@@ -23,7 +25,7 @@ from orca.tables import load_dataset
 
 from datafiles import BatchSink, TableWriter
 from eventrows import EventRows, order_by_repo_type
-from events import CHUNK, decode_index
+from events import CHUNK, NoRows, decode_index
 from gzstream import Whole
 from hourindex import HourIndex, write_index
 from rss import peak_rss_bytes
@@ -83,6 +85,17 @@ def main() raises:
                 load_dataset(REPO_HOUR),
                 load_dataset(GH_RELEASES),
             )
+    elif mode == "noevents":
+        var none = NoRows()
+        var index = HourIndex()
+        _ = decode_index(Whole(Span(gz)), none, index, True, keep_rows=False)
+        rows = index.events
+        _ = write_index(
+            index,
+            load_dataset(CANDIDATES),
+            load_dataset(REPO_HOUR),
+            load_dataset(GH_RELEASES),
+        )
     elif mode != "read":
         raise Error("hour_memory: unknown stage ", mode)
     print(
