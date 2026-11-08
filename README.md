@@ -375,6 +375,72 @@ server registering is `docker exec scheduler orca register` (orca after
 0.10.0). To change a setting: edit `orca.toml`, merge, deploy the new image,
 register again. `mojo_retool` is a one-off and isn't in the file.
 
+### A second machine
+
+The git-heavy pipelines, mojo_history, mojo_versions and mojo_activity, can run
+on a second machine as an orca remote worker, while the CAX21 keeps the
+scheduler, the UI, Postgres, the site, gharchive's fill, mojo_repos and
+mojo_stats. The worker holds no database credentials and needs only outbound
+HTTPS to the UI and to the bucket, no inbound ports. The census runs it on
+"bgent", an Apple-silicon Mac running Docker: arm64 like the CAX21, so the same
+image. (orca's [docs/workers.md](https://github.com/magmalake/orca.mojo/blob/main/docs/workers.md)
+and the [Workers page](https://magmalake.org/s/orca/docs/workers) cover the
+general case; remote workers need orca 0.14.0.)
+
+On the server, a token for the pool, printed once (copy it to the worker
+machine as `worker-token`):
+
+```sh
+docker exec scheduler orca worker-token create --pool bgent --label bgent
+```
+
+Place the three pipelines on the pool in `orca.toml`, then deploy and register
+again as in [Registering on the server](#registering-on-the-server):
+
+```toml
+[pipelines.mojo_history]
+placement = "worker:bgent"
+env = { DISTA_WORKER_SLOTS = "3" }
+```
+
+(the same for mojo_versions and mojo_activity). Until a worker is running their
+runs wait, queued, "waiting for a worker of pool bgent".
+
+On the worker, put the token in a Docker volume. Docker Desktop's VM may not
+see a file bind-mounted from under `~/.config`: the mount shows up as an empty
+directory.
+
+```sh
+docker run --rm -i --entrypoint sh -v orca-worker-secrets:/s ghcr.io/magmalake/orca:<tag> \
+  -c 'cat > /s/token && chmod 600 /s/token' < worker-token
+```
+
+Then the worker, with `s3.env` holding the bucket's `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY`:
+
+```sh
+docker run -d --name orca-worker --restart always \
+  --env-file s3.env -v orca-worker-secrets:/etc/orca/w:ro \
+  -e ORCA_WAREHOUSE=s3://census-mlake-dev/warehouse -e ORCA_LOGS=s3://census-mlake-dev/logs \
+  -e AWS_REGION=nbg1 -e AWS_ENDPOINT_URL_S3=https://nbg1.your-objectstorage.com \
+  -e MOJO_HISTORY_WORKDIR=/work/clones -v census-work:/work \
+  ghcr.io/magmalake/orca:<tag> worker --pool bgent --max-runs 3 --remote https://orca.mojourney.dev --token-file /etc/orca/w/token
+```
+
+`--max-runs 3` lets the three pipelines run at once; the worker admits runs
+against its own host (its log says, for example, "grants up to 8 CPUs and
+11421 MB", less `ORCA_RESERVE_CPUS` and `ORCA_RESERVE_MEMORY_MB`).
+`MOJO_HISTORY_WORKDIR` keeps the clones on a volume. Check it in Ops › Workers
+(`/api/workers`): heartbeat, CPUs and memory.
+
+Limits: the worker must run the server's image tag, so deploy the server first
+and then restart the worker on the same tag; fills (`fills = "all"`) don't run
+on worker pools yet (orca #177), so use `orca backfill` for a pool; and a
+pipeline that needs secrets needs `ORCA_SECRET_FETCH` on the worker (these
+three need none: mojo_history uses no token, and mojo_stats stays on the
+server). With orca main (0.15.0), `ORCA_WORKER_ADDR` serves the worker API on
+a listener of its own, so slow page renders don't delay workers.
+
 ### Edge caching
 
 The console answers pages and JSON with `Cache-Control: public, max-age=60,
