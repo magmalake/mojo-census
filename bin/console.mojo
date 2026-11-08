@@ -93,10 +93,12 @@ from days import day_text
 from howimage import HETZNER_SERVER_WEBP, LINEAGE_DARK_WEBP, LINEAGE_LIGHT_WEBP
 from overview import (
     ACTIVE_DAYS,
+    ARCHIVE_START,
     RISING_FORK_WEIGHT,
     RISING_USED_BY_WEIGHT,
     Builder,
     Overview,
+    archive_days_due,
     bucket_color,
     bucket_of,
     family_of,
@@ -195,8 +197,8 @@ a.chip:hover{color:var(--text);border-color:var(--border-strong);text-decoration
 .kpi{display:block;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;min-width:0;color:var(--text);box-shadow:var(--shadow)}
 a.kpi:hover{border-color:var(--border-strong);text-decoration:none}
 .kpi b{display:block;color:var(--faint);font:500 11.5px/1.5 var(--mono);letter-spacing:.08em;text-transform:uppercase}
-.kpi span{display:block;font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.2;margin-top:2px}
-.kpi small{display:block;color:var(--muted);font-size:12.5px}.kpi span a{color:inherit}.kpi small a{color:var(--lake)}
+.kpi>span{display:block;font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.2;margin-top:2px}
+.kpi small{display:block;color:var(--muted);font-size:12.5px}.kpi>span a{color:inherit}.kpi small a{color:var(--lake)}
 .kpi .up{color:var(--c2)}.kpi .down{color:var(--ember)}
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:16px}
 .cols>div{min-width:0}.cols .tbl{overflow-x:auto}.cols .tbl th{position:static}
@@ -217,6 +219,7 @@ a.kpi:hover{border-color:var(--border-strong);text-decoration:none}
 th a{color:inherit;display:inline-block}th a:hover{color:var(--text);text-decoration:none}
 th[aria-sort] a{color:var(--text)}
 .asof{color:var(--muted);font-size:13px;max-width:78ch;margin-top:28px}
+.cov{color:var(--muted);font-size:13.5px;max-width:78ch;margin:-8px 0 16px}.cov b{color:var(--text);font-weight:600}.cov a{color:var(--lake)}.cov a,.cov .nw{white-space:nowrap}
 .hq{position:relative;display:inline-block;vertical-align:middle;margin-left:6px;line-height:1}
 .help{position:relative;display:inline-flex;-webkit-tap-highlight-color:transparent;align-items:center;justify-content:center;width:18px;height:18px;padding:0;border:1px solid var(--border-strong);border-radius:50%;background:transparent;color:var(--muted);font:600 11px/1 ui-sans-serif,system-ui,sans-serif;cursor:pointer}
 .help::after{content:"";position:absolute;inset:-8px}
@@ -234,7 +237,7 @@ th[aria-sort] a{color:var(--text)}
 .diagram .node.ext rect{fill:var(--bg-alt)!important}
 .lineage{margin:20px auto 8px;max-width:436px}
 .shot{margin:16px 0}.shot img{display:block;width:100%;height:auto;border-radius:var(--radius-sm);border:1px solid var(--border)}.shot figcaption{color:var(--muted);font-size:13px;margin-top:6px}
-@media (max-width:640px){.kpi span{font-size:22px}.top .wrap{gap:12px;flex-wrap:wrap;height:auto;padding-block:8px}.search{order:3;flex-basis:100%;max-width:none}.top nav{gap:12px}.top nav .sep,.top nav .arrow{display:none}.brand{font-size:15px}h1{font-size:24px}th,td{padding:9px 10px}main{padding-top:24px}footer nav{margin-left:0}}
+@media (max-width:640px){.kpi>span{font-size:22px}.top .wrap{gap:12px;flex-wrap:wrap;height:auto;padding-block:8px}.search{order:3;flex-basis:100%;max-width:none}.top nav{gap:12px}.top nav .sep,.top nav .arrow{display:none}.brand{font-size:15px}h1{font-size:24px}th,td{padding:9px 10px}main{padding-top:24px}footer nav{margin-left:0}}
 """
 
 comptime COMMITS_SHOWN = 50
@@ -907,9 +910,10 @@ def _signed(v: Int64) -> String:
     return String("no change")
 
 
-def _kpi(label: String, value: String, note: String, href: String = "") -> String:
-    """One headline card; a link when `href` is given. `note` is HTML."""
-    var inner = String("<b>", label, "</b><span>", value, "</span><small>", note, "</small>")
+def _kpi(label: String, value: String, note: String, href: String = "", help: String = "") -> String:
+    """One headline card; a link when `href` is given. `note` is HTML; `help`
+    a `_help` after the label (not with `href`: no button inside a link)."""
+    var inner = String("<b>", label, help, "</b><span>", value, "</span><small>", note, "</small>")
     if href.byte_length() > 0:
         return String("<a class=kpi href='", html_escape(href), "'>", inner, "</a>")
     return String("<div class=kpi>", inner, "</div>")
@@ -1025,6 +1029,12 @@ def _span(secs: Int) -> String:
     return String(mins // 60, " h ", mins % 60, " min") if mins % 60 > 0 else String(mins // 60, " h")
 
 
+comptime HISTORY_KEYS = ORCA_UI + "/pipelines/mojo_history"
+"""mojo_history's keys on orca: which repos' histories are read."""
+comptime ARCHIVE_COVERAGE = ORCA_UI + "/pipelines/gharchive?tab=operate&cov=year#coverage"
+"""gharchive's coverage calendar on orca, by year: which days are loaded."""
+
+
 def overview(req: Request, c: Cache) raises -> Response:
     if _raw_query(req).byte_length() > 0 and (
         req.query_param("sort").byte_length() > 0
@@ -1053,32 +1063,70 @@ def overview(req: Request, c: Cache) raises -> Response:
             )
             return _page("", h^, "overview")
         var dc = ov.commits_30 - ov.commits_prev_30
+        # Coverage: the repos whose history is read, and the GH Archive days
+        # loaded since ARCHIVE_START; most numbers below rest on one of them.
+        var due = archive_days_due(c.built_day)
+        var got = min(c.sources.archive_days, due)
+        var hist_of = String(_n(Int64(ov.with_history)), " of ", _n(Int64(ov.repos)), " repos")
+        var hist_pct = _pct(ov.with_history, ov.repos)
+        var days_of = String(_n(Int64(got)), " of ", _n(Int64(due)), " days")
+        var days_pct = _pct(got, due)
+        var hist_a = String("<a href='", html_escape(HISTORY_KEYS), "' rel=noopener>")
+        var days_a = String("<a href='", html_escape(ARCHIVE_COVERAGE), "' rel=noopener>")
+        var hist_help = String(
+            "Partial coverage: counted over the ", _n(Int64(ov.with_history)),
+            " repos whose git history is read, ", hist_pct, " of the ", _n(Int64(ov.repos)),
+            " found so far. ", hist_a, "mojo_history's keys</a> show which are read.",
+        )
         h.write(
+            "<p class=cov><b>Coverage:</b> git histories read for ", hist_a, hist_of, "</a> (", hist_pct,
+            "); GH Archive loaded for ", days_a, days_of, "</a> since <span class=nw>", day_text(Int64(ARCHIVE_START)),
+            "</span> (", days_pct, "). Numbers that rest on either are partial and grow as the pipelines catch up.</p>",
             "<div class=kpis>",
             _kpi(
                 "Repos", String("<a href='/repos'>", _n(Int64(ov.repos)), "</a>"),
                 String(
                     "<a href='", html_escape(list_url(with_new(ListQuery(String("lines"), False, String(), False, String(), False), String("30d")))), "'>",
-                    _signed(Int64(ov.with_history - ov.repos_30_ago)), " in 30 days</a>",
+                    _signed(Int64(ov.with_history - ov.repos_30_ago)), " in 30 days</a> of the ",
+                    _n(Int64(ov.with_history)), " with history",
+                ),
+                help=_help(
+                    "h-kpi-repos", "Repos",
+                    String(
+                        "Partial coverage: repos are found in the GH Archive days loaded so far, ", days_of,
+                        " (", days_pct, "), so the total is a lower bound (", days_a, "coverage calendar</a>).",
+                        " The change in 30 days is by first Mojo commit, so it counts only the ",
+                        _n(Int64(ov.with_history)), " repos whose git history is read (", hist_pct, "; ",
+                        hist_a, "mojo_history's keys</a>).",
+                    ),
                 ),
             ),
             _kpi(
                 "Commits", _n(Int64(ov.commits)),
                 String(_signed(Int64(ov.commits_30)), " in 30 days"),
+                help=_help("h-kpi-commits", "Commits", hist_help),
             ),
             _kpi(
-                "Lines of Mojo", compact(ov.lines),
+                "Lines of Mojo",
+                String(
+                    "<a href='", html_escape(list_url(ListQuery(String("lines"), False, String(), False, String(), False))),
+                    "'>", compact(ov.lines), "</a>",
+                ),
                 String(_signed(ov.lines - ov.lines_30_ago), " in 30 days"),
-                list_url(ListQuery(String("lines"), False, String(), False, String(), False)),
+                help=_help("h-kpi-lines", "Lines of Mojo", hist_help),
             ),
             _kpi(
-                "Active repos", _n(Int64(ov.active)),
-                String(_pct(ov.active, ov.with_history), " of ", ov.with_history, " read; a commit in the last year"),
-                String("/repos?active=1y"),
+                "Active repos", String("<a href='/repos?active=1y'>", _n(Int64(ov.active)), "</a>"),
+                String(
+                    "a commit in the last year: ", _pct(ov.active, ov.with_history), " of the ",
+                    _n(Int64(ov.with_history)), " repos whose history is read",
+                ),
+                help=_help("h-kpi-active", "Active repos", hist_help),
             ),
             _kpi(
                 "Commits, 30 days", _n(Int64(ov.commits_30)),
                 String(_signed(Int64(dc)), " vs the 30 days before"),
+                help=_help("h-kpi-commits30", "Commits, 30 days", hist_help),
             ),
             _kpi(
                 "New repos this month",
@@ -1087,6 +1135,7 @@ def overview(req: Request, c: Cache) raises -> Response:
                     "<a href='/repos?new=last-month'>", ov.new_last_month,
                     " last month</a> (first Mojo commit)",
                 ),
+                help=_help("h-kpi-new", "New repos this month", hist_help),
             ),
             "</div>",
         )
@@ -1184,6 +1233,9 @@ def overview(req: Request, c: Cache) raises -> Response:
                     " census repos that depend on them. Score = stars gained + ", RISING_FORK_WEIGHT,
                     " &times; forks gained + ", RISING_USED_BY_WEIGHT, " &times; repos using it now; a",
                     " repo needs a new star or fork to be ranked. Stars is its total now.",
+                    " Partial coverage: GH Archive is loaded for ", days_of, " since ",
+                    day_text(Int64(ARCHIVE_START)), " (", days_pct, "), and a day not loaded adds no",
+                    " stars or forks (", days_a, "coverage calendar</a>).",
                 ),
             ),
             "</h2>",
@@ -1300,6 +1352,11 @@ def overview_json(req: Request, c: Cache) raises -> Response:
         ',"days_loaded":', c.sources.days, ',"first_day":', _q(c.sources.first_day),
         ',"last_day":', _q(c.sources.last_day), ',"repos":', ov.repos,
         ',"repos_with_history":', ov.with_history, ',"repos_30d_ago":', ov.repos_30_ago,
+        ',"coverage":{"repos":', ov.repos, ',"repos_with_history":', ov.with_history,
+        ',"gharchive_days_loaded":', min(c.sources.archive_days, archive_days_due(c.built_day)),
+        ',"gharchive_days_due":', archive_days_due(c.built_day),
+        ',"gharchive_since":', _q(day_text(Int64(ARCHIVE_START))),
+        ',"gharchive_until":', _q(day_text(Int64(c.built_day - 1))), "}",
         ',"commits":', ov.commits, ',"commits_30d":', ov.commits_30,
         ',"commits_prev_30d":', ov.commits_prev_30, ',"mojo_lines":', ov.lines,
         ',"mojo_lines_30d_ago":', ov.lines_30_ago, ',"new_repos_this_month":', ov.new_this_month,
@@ -2430,7 +2487,7 @@ def _look(mut sw: Swap[Cache], mut runs: Swap[CheckRun], cur: Cache, t: Int64) r
     var today = Int(t // 86400)
     if not needs_build(cur.ready, cur.built_day, today, src.same_as(cur.sources)):
         return
-    read_days(src)
+    read_days(src, day_text(Int64(today - 1)))
     var next = Cache()
     next._build(today, src^)
     next.built_at = t

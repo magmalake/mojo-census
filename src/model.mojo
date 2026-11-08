@@ -13,7 +13,7 @@ from historyrows import repo_dep_rows
 from days import day_text
 from jscan import micros_to_iso
 from lake import exists, load, try_load
-from overview import Builder, tool_code
+from overview import ARCHIVE_START, Builder, tool_code
 from versions import compare_versions, usable
 
 
@@ -662,11 +662,16 @@ struct Sources(Copyable, Movable):
     snapshots (`read_days`)."""
     var first_day: String
     var last_day: String
+    var archive_days: Int
+    """Of `days`, the ones from `ARCHIVE_START` to the `until` given
+    `count_days`: what the home page's coverage counts against
+    `archive_days_due`."""
 
     def __init__(out self):
         self.ids = List[Int64]()
         self.as_of_ms = 0
         self.days = 0
+        self.archive_days = 0
         self.first_day = String()
         self.last_day = String()
 
@@ -696,26 +701,36 @@ def read_sources() raises -> Sources:
     return out^
 
 
-def read_days(mut src: Sources) raises:
+def read_days(mut src: Sources, until: String = String()) raises:
     """Count the GH Archive days loaded into `src`: the days the snapshots
     of gharchive.events and gharchive.repo_hour name (`count_days`)."""
-    count_days(src, try_load("gharchive", "events"), try_load("gharchive", "repo_hour"))
+    count_days(src, try_load("gharchive", "events"), try_load("gharchive", "repo_hour"), until)
 
 
 def count_days(
-    mut src: Sources, events: Optional[Table], repo_hour: Optional[Table]
+    mut src: Sources,
+    events: Optional[Table],
+    repo_hour: Optional[Table],
+    until: String = String(),
 ) raises:
     """The days the snapshots' `orca.partitions` name, of either table.
     gharchive commits both for every day it loads, so with the events on
     they name the same days, and gharchive.repo_hour alone keeps counting
     the days loaded with `GHARCHIVE_EVENTS=off`; the events still count the
-    days loaded before that, should their repo_hour snapshots be gone."""
+    days loaded before that, should their repo_hour snapshots be gone.
+    `src.archive_days` counts the ones up to `until` (a `YYYY-MM-DD`)."""
     var seen = Dict[String, Bool]()
     if events:
         _snapshot_days(events.value(), seen, src)
     if repo_hour:
         _snapshot_days(repo_hour.value(), seen, src)
     src.days = len(seen)
+    # The coverage: the days from ARCHIVE_START to `until` (no end if empty).
+    var start = day_text(Int64(ARCHIVE_START))
+    src.archive_days = 0
+    for k in seen.keys():
+        if k >= start and (until.byte_length() == 0 or k <= until):
+            src.archive_days += 1
 
 
 def _snapshot_days(t: Table, mut seen: Dict[String, Bool], mut src: Sources) raises:

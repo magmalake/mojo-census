@@ -19,6 +19,9 @@ comptime DAY_US = Int64(86_400_000_000)
 comptime BASE_MONTH = (2022 - 1970) * 12
 """The first month of the curves (months since 1970-01): Mojo's first public
 code is from 2022, and an earlier commit counts in this month."""
+comptime ARCHIVE_START = 19358
+"""2023-01-01, in days since 1970-01-01: the first GH Archive day the
+gharchive pipeline loads (its `Daily["2023-01-01"]`)."""
 comptime ACTIVE_DAYS = 365
 """A repository is active when its latest commit is this recent."""
 comptime TOOL_NONE = UInt8(0)
@@ -40,6 +43,13 @@ def month_of_days(days: Int) -> Int:
     if m <= 2:
         y += 1
     return (y - 1970) * 12 + m - 1
+
+
+def archive_days_due(today: Int) -> Int:
+    """The GH Archive days from `ARCHIVE_START` to yesterday: the days
+    gharchive should have loaded by `today` (days since 1970-01-01), the
+    whole of the home page's coverage."""
+    return max(today - ARCHIVE_START, 0)
 
 
 def month_label(index: Int) -> String:
