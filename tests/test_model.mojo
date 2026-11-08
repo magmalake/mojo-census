@@ -330,9 +330,26 @@ def test_days_loaded_with_and_without_the_events() raises:
     assert_equal(after.first_day, "2024-06-11")
     assert_equal(after.last_day, "2024-06-13")
     var no_events = Sources()
-    count_days(no_events, None, off_rh^)
+    count_days(no_events, None, off_rh.copy())
     assert_equal(no_events.days, 3)
     assert_equal(no_events.last_day, "2024-06-13")
+    # The coverage counts the days up to `until` (none past it), and all of
+    # them without one; each day once, whichever table names it.
+    assert_equal(after.archive_days, 3)
+    var until = Sources()
+    count_days(until, events.copy(), off_rh^, "2024-06-12")
+    assert_equal(until.days, 3)
+    assert_equal(until.archive_days, 2)
+
+
+def test_coverage_skips_days_before_the_start() raises:
+    var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-cov-", perf_counter_ns())
+    var cat = FilesystemCatalog.local(dir)
+    var rh = _days_table(cat, "repo_hour", ["2022-12-31", "2023-01-01", "2023-01-02"])
+    var src = Sources()
+    count_days(src, None, rh^, "2023-01-01")
+    assert_equal(src.days, 3)
+    assert_equal(src.archive_days, 1)
 
 
 def main() raises:

@@ -20,10 +20,12 @@ from listing import (
     with_version,
 )
 from overview import (
+    ARCHIVE_START,
     DAY_US,
     RISING_FORK_WEIGHT,
     RISING_USED_BY_WEIGHT,
     Builder,
+    archive_days_due,
     bucket_color,
     month_label,
     month_of_days,
@@ -35,6 +37,15 @@ from overview import (
 
 def _us(y: Int, m: Int, d: Int) -> Int64:
     return Int64(days_from_civil(y, m, d)) * DAY_US
+
+
+def test_archive_days_due() raises:
+    # 2023-01-01 to yesterday: none on the first day, 1,407 on 2026-11-08.
+    assert_equal(ARCHIVE_START, days_from_civil(2023, 1, 1))
+    assert_equal(archive_days_due(ARCHIVE_START), 0)
+    assert_equal(archive_days_due(ARCHIVE_START + 1), 1)
+    assert_equal(archive_days_due(days_from_civil(2026, 11, 8)), 1407)
+    assert_equal(archive_days_due(ARCHIVE_START - 5), 0)
 
 
 def test_months() raises:
