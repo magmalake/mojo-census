@@ -89,7 +89,7 @@ from model import (
     versions_of,
 )
 from days import day_text
-from howimage import HETZNER_SERVER_WEBP
+from howimage import HETZNER_SERVER_WEBP, LINEAGE_DARK_WEBP, LINEAGE_LIGHT_WEBP
 from overview import (
     ACTIVE_DAYS,
     RISING_FORK_WEIGHT,
@@ -231,6 +231,7 @@ th[aria-sort] a{color:var(--text)}
 .diagram .node.pipe rect{fill:var(--ember-wash)!important;stroke:var(--ember)!important}
 .diagram .node.ice path{fill:var(--surface-2)!important;stroke:var(--lake)!important}
 .diagram .node.ext rect{fill:var(--bg-alt)!important}
+.lineage{margin:20px auto 8px;max-width:436px}
 .shot{margin:16px 0}.shot img{display:block;width:100%;height:auto;border-radius:var(--radius-sm);border:1px solid var(--border)}.shot figcaption{color:var(--muted);font-size:13px;margin-top:6px}
 @media (max-width:640px){.kpi span{font-size:22px}.top .wrap{gap:12px;flex-wrap:wrap;height:auto;padding-block:8px}.search{order:3;flex-basis:100%;max-width:none}.top nav{gap:12px}.top nav .sep,.top nav .arrow{display:none}.brand{font-size:15px}h1{font-size:24px}th,td{padding:9px 10px}main{padding-top:24px}footer nav{margin-left:0}}
 """
@@ -2029,64 +2030,30 @@ comptime HOW_LEAD = (
     " tables.</p></div>"
 )
 
-comptime DIAGRAM = """flowchart LR
-  subgraph sources [Sources]
-    gha([GH Archive])
-    api([GitHub API])
-    git([git clones])
+comptime DIAGRAM = """flowchart TB
+  gha([GH Archive])
+  api([GitHub API])
+  git([git repositories])
+  subgraph server [Hetzner CAX21]
+    sched[orca scheduler and UI, Postgres]
+    local[gharchive, mojo_repos, mojo_stats]
+    sched -. starts .-> local
   end
-  subgraph orca [orca]
-    direction TB
-    sched[scheduler and UI]
-    pg[(Postgres: run state)]
-    sched --- pg
+  subgraph mac [Mac: orca remote worker]
+    remote[mojo_history, mojo_versions, mojo_activity]
   end
-  gharchive[gharchive]
-  index[gharchive_index, one-off]
-  events[(gharchive.events)]
-  candidates[(gharchive.candidates)]
-  repo_hour[(gharchive.repo_hour)]
-  gh_releases[(gharchive.releases)]
-  mojo_repos[mojo_repos]
-  repos[(mojo.repos)]
-  checked[(mojo.checked)]
-  mojo_history[mojo_history]
-  mojo_versions[mojo_versions]
-  mojo_activity[mojo_activity]
-  mojo_stats[mojo_stats]
-  subgraph out [mojo.* tables]
-    commits[(mojo.commits)]
-    migrations[(mojo.migrations)]
-    tags[(mojo.tags)]
-    repo_versions[(mojo.repo_versions)]
-    repo_deps[(mojo.repo_deps)]
-    activity[(mojo.activity)]
-    releases[(mojo.releases)]
-    repo_stats[(mojo.repo_stats)]
-  end
+  lake[(Iceberg tables in Hetzner Object Storage)]
   site([mojourney.dev])
-  gha --> gharchive
-  gharchive --> candidates & repo_hour & gh_releases
-  gharchive -. GHARCHIVE_EVENTS=on .-> events
-  index -.-> candidates & repo_hour & gh_releases
-  candidates --> mojo_repos
-  api --> mojo_repos
-  mojo_repos --> repos & checked
-  repos --> mojo_history & mojo_versions & mojo_activity & mojo_stats
-  git --> mojo_history & mojo_versions
-  mojo_history --> commits & migrations & tags
-  mojo_versions --> repo_versions & repo_deps
-  repo_hour & gh_releases --> mojo_activity
-  mojo_activity --> activity & releases
-  api --> mojo_stats
-  mojo_stats --> repo_stats
-  sched -. runs every pipeline .-> gharchive
-  out -- read by --> site
-  class gharchive,index,mojo_repos,mojo_history,mojo_versions,mojo_activity,mojo_stats pipe
-  class events,candidates,repo_hour,gh_releases,repos,checked,commits,migrations,tags,repo_versions,repo_deps,activity,releases,repo_stats ice
+  gha & api --> local
+  git --> remote
+  remote -. claims runs over HTTPS .-> sched
+  local & remote --> lake
+  lake -- read by --> site
+  class local,remote pipe
+  class lake ice
   class gha,api,git,site ext
 """
-"""The pipelines and the tables between them, as Mermaid. The page has it in
+"""The machines, the pipelines on them and where the data goes, as Mermaid. The page has it in
 a `<pre class=mermaid>` (escaped), which `MERMAID_JS` draws; without
 JavaScript it reads as text."""
 
@@ -2112,10 +2079,10 @@ comptime MERMAID_JS = (
 comptime HOW_PIPELINES = (
     "<div class=prose>"
     "<p class='mute note'>Rounded boxes are the sources and this site,"
-    " rectangles the pipelines, cylinders the Iceberg tables; dotted arrows are"
-    " orca's scheduling, the one-off gharchive_index and the raw events, kept"
-    " only with GHARCHIVE_EVENTS on. On a narrow screen,"
-    " scroll it sideways.</p>"
+    " rectangles the pipelines and orca, cylinders storage; dotted arrows are"
+    " orca starting runs, on the server itself and on the Mac, which claims"
+    " them over HTTPS. Each pipeline and table is under <a href='#tables'>The"
+    " tables</a>. On a narrow screen, scroll it sideways.</p>"
     "<h2>The pipelines</h2><ul><li><a href='"
     + ORCA_UI
     + "/pipelines/gharchive' rel=noopener>gharchive</a> loads <a"
@@ -2210,6 +2177,24 @@ comptime HOW_PIPELINES = (
     " volume, 0 of 20 TB outgoing traffic used, 12.49 a month.'><figcaption>The"
     " server's summary in the Hetzner console, which shows the price with a $"
     " sign: it is &euro;12.49 a month.</figcaption></figure>"
+    "<h2 id=tables>The tables</h2>"
+    "<p>Each pipeline and the Iceberg tables it reads and writes, as orca's <a"
+    " href='"
+    + ORCA_UI
+    + "/datasets' rel=noopener>Datasets</a> page draws them from the code.</p>"
+    "<figure class='shot lineage'><a href='"
+    + ORCA_UI
+    + "/datasets' rel=noopener><picture><source media='(prefers-color-scheme:"
+    " dark)' srcset='"
+    + LINEAGE_DARK_WEBP
+    + "'><img src='"
+    + LINEAGE_LIGHT_WEBP
+    + "' width=436 height=1033 loading=lazy alt='The census lineage: gharchive"
+    " writes gharchive.events, gharchive_index the candidates, releases and"
+    " repo_hour tables, mojo_repos reads them into mojo.repos and mojo.checked,"
+    " and mojo_history, mojo_stats, mojo_versions and mojo_activity write the"
+    " other mojo tables.'></picture></a><figcaption>Pipelines in orange, tables"
+    " in teal.</figcaption></figure>"
     "<h2>More</h2>"
     "<p>The orca docs cover <a href='"
     + ORCA_DOCS
