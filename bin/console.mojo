@@ -51,6 +51,7 @@ from threads import OpaquePtr, ThreadHandle
 from analytics import posthog_snippet
 from checks import CheckRun, RepoFacts, Tops, notice, page_facts, publish, run_checks, when
 from charts import compact, donut, grid_line, line_chart
+from deps import Depended, most_depended
 from jscan import micros_to_iso
 from listing import (
     NEW_30D,
@@ -504,9 +505,10 @@ struct Cache(Movable):
     var rising_score: List[Int64]
     var rising_stars: List[Int64]
     """Stars now."""
-    var depended: List[Int]
-    """Indices into `libs` of the `DEPENDED_SHOWN` repos the most census
-    repos depend on."""
+    var depended: List[Depended]
+    """The `DEPENDED_SHOWN` rows of Most depended on (`most_depended`):
+    the repos the most census repos depend on, an owner's collapsed into
+    `owner/*` when two or more would be shown."""
     var sources: Sources
     var built_day: Int
     var built_at: Int64
@@ -546,7 +548,7 @@ struct Cache(Movable):
         self.rising_used_by = List[Int64]()
         self.rising_score = List[Int64]()
         self.rising_stars = List[Int64]()
-        self.depended = List[Int]()
+        self.depended = List[Depended]()
         self.sources = Sources()
         self.built_day = 0
         self.built_at = 0
@@ -572,6 +574,7 @@ struct Cache(Movable):
         var stars = List[Int64]()
         var forks = List[Int64]()
         var used_by = List[Int64]()
+        var users = List[List[String]]()
         var buckets = List[String]()
         var families = List[String]()
         var est_buckets = List[String]()
@@ -590,6 +593,7 @@ struct Cache(Movable):
             stars.append(l.stars)
             forks.append(l.forks)
             used_by.append(Int64(len(l.used_by)))
+            users.append(l.used_by.copy())
             var why = unversioned(l.commits, tool_code(l.tooling))
             buckets.append(bucket_of(l.mojo_version, why))
             families.append(family_of(l.mojo_version, why))
@@ -624,7 +628,7 @@ struct Cache(Movable):
             self.rising_used_by.append(Int64(len(libs[i].used_by)))
             self.rising_score.append(score_list[i])
             self.rising_stars.append(libs[i].stars)
-        self.depended = top_gains(used_by, DEPENDED_SHOWN)
+        self.depended = most_depended(names, users, stars, forks, DEPENDED_SHOWN)
         var details = Dict[String, RepoData]()
         for e in histories().items():
             details[e.key] = RepoData()
@@ -1235,18 +1239,31 @@ def overview(req: Request, c: Cache) raises -> Response:
                     "h-depended", "Most depended on",
                     "The repos the most census repos declare a dependency on, in the manifests at"
                     " their HEAD (pixi, magic, pyproject, recipe): by GitHub URL, package name or"
-                    " repo name.",
+                    " repo name. A dependency is internal when both repos have the same GitHub"
+                    " owner; Other owners counts the rest. When two or more of one owner's repos"
+                    " would be listed they are one row, owner/*: Used by counts the distinct repos"
+                    " that depend on any of them, and Stars and Forks are their sums.",
                 ),
                 "</h2>",
                 "<div class=tbl><table><thead><tr><th>Repository</th><th class=num>Used by</th>",
+                "<th class=num>Other owners</th>",
                 "<th class=num>Stars</th><th class=num>Forks</th></tr></thead><tbody>",
             )
-            for i in c.depended:
-                ref l = c.libs[i]
+            for ref d in c.depended:
+                if d.group:
+                    h.write(
+                        "<tr><td><a class=repo href='/search?q=", html_escape(d.owner), "'>",
+                        html_escape(d.name), "</a> <span class=mute>&middot; ", len(d.members),
+                        " repos</span>",
+                    )
+                else:
+                    h.write(
+                        "<tr><td><a class=repo href='/repos/", html_escape(d.name), "'>",
+                        html_escape(d.name), "</a>",
+                    )
                 h.write(
-                    "<tr><td><a class=repo href='/repos/", html_escape(l.repo), "'>",
-                    html_escape(l.repo), "</a></td><td class=num>", _n(Int64(len(l.used_by))),
-                    "</td><td class=num>", _n(l.stars), "</td><td class=num>", _n(l.forks), "</td></tr>",
+                    "</td><td class=num>", _n(d.used_by), "</td><td class=num>", _n(d.used_by - d.internal),
+                    "</td><td class=num>", _n(d.stars), "</td><td class=num>", _n(d.forks), "</td></tr>",
                 )
             h.write("</tbody></table></div></div></div>")
         # As of.
@@ -1341,8 +1358,18 @@ def overview_json(req: Request, c: Cache) raises -> Response:
     for k in range(len(c.depended)):
         if k > 0:
             out += ","
-        ref l = c.libs[c.depended[k]]
-        out.write('{"repo":', _q(l.repo), ',"used_by":', len(l.used_by), ',"stars":', l.stars, "}")
+        ref d = c.depended[k]
+        out.write(
+            '{"repo":', _q(d.name), ',"used_by":', d.used_by, ',"stars":', d.stars,
+            ',"forks":', d.forks, ',"internal":', d.internal,
+            ',"owner_group":', "true" if d.group else "false",
+        )
+        if d.group:
+            var rs = List[String]()
+            for m in d.members:
+                rs.append(c.libs[m].repo)
+            out.write(',"owner":', _q(d.owner), ',"repos":', _strs_json(rs))
+        out += "}"
     out += '],"most_active":['
     for i in range(len(c.active_repos)):
         if i > 0:
@@ -2386,9 +2413,11 @@ def _check(c: Cache, t: Int64) raises -> CheckRun:
     tops.rising_used_by = c.rising_used_by.copy()
     tops.rising_score = c.rising_score.copy()
     tops.rising_stars = c.rising_stars.copy()
-    for i in c.depended:
-        tops.depended.append(c.libs[i].repo)
-        tops.depended_used_by.append(Int64(len(c.libs[i].used_by)))
+    # An owner/* row is checked by its repos.
+    for ref d in c.depended:
+        for m in d.members:
+            tops.depended.append(c.libs[m].repo)
+            tops.depended_used_by.append(Int64(len(c.libs[m].used_by)))
     return CheckRun(t, c.built_at, run_checks(c.repo_rows, repos, tops))
 
 

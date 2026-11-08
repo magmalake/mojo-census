@@ -14,6 +14,7 @@ that matter (a `name = "spec"` line under a dependencies table, a `- name
 spec` item under `requirements:`) don't need a full parser.
 """
 
+from overview import top_gains
 from versions import packages
 
 comptime DEPENDS = "depends"
@@ -731,3 +732,145 @@ def resolve(repos: List[String], rows: List[RepoDep]) raises -> DepGraph:
             ns.append(v)
         g.declared[e.key] = _sorted(ns^)
     return g^
+
+
+def owner_of(repo: String) -> String:
+    """The owner part of `owner/name`, lowercased: GitHub owners are the
+    same whatever their case."""
+    var slash = repo.find("/")
+    return String(repo[byte=:slash]).lower() if slash >= 0 else repo.lower()
+
+
+struct Depended(Copyable, Movable):
+    """A row of the home page's Most depended on: one repository, or every
+    depended-on repository of one owner (`owner/*`)."""
+
+    var name: String
+    """The repository, or `owner/*` with the owner as its first repository
+    writes it."""
+    var owner: String
+    """`owner_of` the repository (or repositories)."""
+    var group: Bool
+    """Whether it stands for an owner's repositories."""
+    var members: List[Int]
+    """Indices into `most_depended`'s `repos` of the repositories it stands
+    for, the most used first."""
+    var used_by: Int64
+    """The distinct census repositories that depend on any of them."""
+    var internal: Int64
+    """Of those, the ones with the same owner."""
+    var stars: Int64
+    """The repositories' stars, summed."""
+    var forks: Int64
+
+    def __init__(out self, name: String, owner: String, group: Bool):
+        self.name = name
+        self.owner = owner
+        self.group = group
+        self.members = List[Int]()
+        self.used_by = 0
+        self.internal = 0
+        self.stars = 0
+        self.forks = 0
+
+
+def _internal(owner: String, users: List[String]) -> Int64:
+    var n = Int64(0)
+    for u in users:
+        if owner_of(u) == owner:
+            n += 1
+    return n
+
+
+def _depended_rows(
+    repos: List[String],
+    used_by: List[List[String]],
+    stars: List[Int64],
+    forks: List[Int64],
+    grouped: Dict[String, Bool],
+) raises -> List[Depended]:
+    """A row per depended-on repository, but one per owner of `grouped`,
+    in the order of `repos` (an owner's row where its first one is)."""
+    var rows = List[Depended]()
+    var at = Dict[String, Int]()
+    var users = Dict[String, Dict[String, Bool]]()
+    for i in range(len(repos)):
+        if len(used_by[i]) == 0:
+            continue
+        var o = owner_of(repos[i])
+        if o not in grouped:
+            var r = Depended(repos[i], o, False)
+            r.members.append(i)
+            r.used_by = Int64(len(used_by[i]))
+            r.internal = _internal(o, used_by[i])
+            r.stars = stars[i]
+            r.forks = forks[i]
+            rows.append(r^)
+            continue
+        if o not in at:
+            var slash = repos[i].find("/")
+            at[o] = len(rows)
+            rows.append(Depended(String(repos[i][byte=:slash], "/*"), o, True))
+            users[o] = Dict[String, Bool]()
+        ref r = rows[at[o]]
+        # The most used first; ties keep the order of `repos`.
+        var j = len(r.members)
+        r.members.append(i)
+        while j > 0 and len(used_by[r.members[j - 1]]) < len(used_by[i]):
+            r.members[j] = r.members[j - 1]
+            j -= 1
+        r.members[j] = i
+        r.stars += stars[i]
+        r.forks += forks[i]
+        for u in used_by[i]:
+            users[o][u] = True
+    for e in users.items():
+        ref r = rows[at[e.key]]
+        var us = List[String]()
+        for u in e.value.keys():
+            us.append(u)
+        r.used_by = Int64(len(us))
+        r.internal = _internal(e.key, us)
+    return rows^
+
+
+def most_depended(
+    repos: List[String],
+    used_by: List[List[String]],
+    stars: List[Int64],
+    forks: List[Int64],
+    n: Int,
+) raises -> List[Depended]:
+    """The `n` rows of the home page's Most depended on: the repositories
+    the most census repositories depend on (`used_by`, per repository of
+    `repos`), with an owner's repositories collapsed into one `owner/*` row
+    when two or more of them would be shown. The `owner/*` row counts the
+    distinct repositories that depend on any of them, so a repository that
+    uses five of an owner's libraries counts once.
+
+    Collapsing frees slots that the next repositories fill, which can bring
+    two of another owner's in: that owner is collapsed too, until no owner
+    has two rows. Ties keep the order of `repos`."""
+    var grouped = Dict[String, Bool]()
+    while True:
+        var rows = _depended_rows(repos, used_by, stars, forks, grouped)
+        var counts = List[Int64]()
+        for ref r in rows:
+            counts.append(r.used_by)
+        var top = top_gains(counts, n)
+        var shown = Dict[String, Int]()
+        var more = False
+        for i in top:
+            if rows[i].group:
+                continue
+            var c = shown.get(rows[i].owner, 0) + 1
+            shown[rows[i].owner] = c
+            if c == 2:
+                grouped[rows[i].owner] = True
+                more = True
+        if not more:
+            var out = List[Depended]()
+            for i in top:
+                out.append(rows[i].copy())
+            return out^
+
