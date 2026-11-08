@@ -299,11 +299,17 @@ comptime SUBTITLE = "the Mojo ecosystem census"
 comptime SITE_URL = "https://mojourney.dev"
 comptime FEEDBACK = "https://github.com/magmalake/mojo-census/issues"
 """Where the footer's Feedback link goes."""
-comptime EDGE_CACHE = "public, max-age=60, s-maxage=1800"
+comptime EDGE_CACHE = (
+    "public, max-age=60, s-maxage=1800, stale-while-revalidate=60,"
+    " stale-if-error=86400"
+)
 """Cache-Control of a page or JSON answer: a minute in the browser, 30 minutes
 at Cloudflare's edge (the refresher's period; a cache rule for mojourney.dev
-must make HTML eligible for caching: README, "Edge caching"). The warming-up page,
-`/checks` and any answer but a 200 are `no-store`."""
+must make HTML eligible for caching: README, "Edge caching"). Past that the
+edge may answer from its copy while it fetches a new one (a minute), and
+for a day while the console can't answer: a deploy's restart, or its
+warming-up 503, shows readers the last page instead of an error. The
+warming-up page, `/checks` and any answer but a 200 are `no-store`."""
 
 comptime DESCRIPTION = (
     "Mojo repos, versions and growth, counted from GH Archive by"
