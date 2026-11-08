@@ -29,7 +29,7 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
                             mojo.migrations  (keyed by repository, 50 a run,       │
                             mojo.tags         a dista task per clone)              │
                             mojo.repo_stats ◀──mojo_stats──────────────────────────┘
-                              (by month)       (Mondays 06:00 UTC, GitHub API)
+                              (by month)       (daily 06:00 UTC, GitHub API)
                                    │
                                    ▼
                           bin/console (flare)
@@ -145,8 +145,8 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   found today has its whole history. A run replaces the rows of the
   (repository, day) pairs it computed and keeps the rest, one run at a
   time, so reruns don't duplicate rows.
-- **`pipelines/mojo_stats.mojo`**: Mondays at 06:00 UTC (daily partitions,
-  one a week), one `GET /repos/{owner}/{repo}` per repository in
+- **`pipelines/mojo_stats.mojo`**: daily at 06:00 UTC (daily partitions
+  from 2026-11-08), one `GET /repos/{owner}/{repo}` per repository in
   `mojo.repos` into `mojo.repo_stats` (stars, forks, open issues, watchers,
   topics, archived, last push, homepage, license, description, size), by
   month of `as_of`, so stars become a time series. A repository that is
@@ -526,5 +526,5 @@ Not done in this local run:
   2025-01-01..2025-01-31`) to see the cost, then the rest from 2023-01-01.
   Note that recent hours of GH Archive carry much smaller payloads.
 - `mojo.repos` stars and forks are as of the day a repository was found;
-  `mojo.repo_stats` has them week by week, and `mojo.activity` day by day
+  `mojo.repo_stats` has them day by day from 2026-11-08, and `mojo.activity` day by day
   from GH Archive.

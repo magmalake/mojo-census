@@ -113,7 +113,7 @@ comptime REPO_STATS_SCHEMA = (
     '{"id":17,"name":"default_branch","required":false,"type":"string"},'
     '{"id":18,"name":"renamed_to","required":false,"type":"string"}]}'
 )
-"""One row per repository per weekly refresh (mojo_stats). `state` is `ok`,
+"""One row per repository per daily refresh (mojo_stats). `state` is `ok`,
 `renamed` (GitHub redirected to `renamed_to`), `gone` (404/410), `blocked`
 (451) or `error HTTP n`."""
 
