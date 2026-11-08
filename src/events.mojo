@@ -8,6 +8,10 @@ into the table (`datafiles.TableWriter`), all at once, so an hour is never
 fully in memory, as JSON or as rows (#37). The compressed hour is given back
 as it is decoded (`GzInput.release`). The same pass feeds
 `hourindex.HourIndex` for the three index tables.
+
+With `GHARCHIVE_EVENTS=off` (`keep_events`) the parser builds no rows at all,
+only the index: the hour's index files are the same, byte for byte, and
+nothing is written to `gharchive.events`.
 """
 
 from std.os import getenv
@@ -27,6 +31,19 @@ from jscan import Range, find_newline, scan_event, text, timestamp_micros
 comptime ROWS_PER_BATCH = 50_000
 """Rows per batch, which is also the rows of each Parquet file of the
 events: the unit that is sorted by (repo, type) and written."""
+
+
+def keep_events() raises -> Bool:
+    """`GHARCHIVE_EVENTS`: `on` (the default) writes each hour's events
+    into `gharchive.events`; `off` writes only the three index tables. The
+    step and its hour tasks each read it, and the step checks that the
+    files a task sends back agree."""
+    var v = String(getenv("GHARCHIVE_EVENTS", "on").strip())
+    if v == "on" or v.byte_length() == 0:
+        return True
+    if v == "off":
+        return False
+    raise Error("GHARCHIVE_EVENTS: on or off, not ", v)
 
 
 def hour_url(day: String, hour: Int) -> String:
@@ -132,14 +149,20 @@ struct EventParser(Movable):
     var index: HourIndex
     var indexing: Bool
     """Whether `index` takes every event (candidates, counts, releases)."""
+    var keep_rows: Bool
+    """Whether the events become rows; without them (`GHARCHIVE_EVENTS=off`)
+    only `index` is filled and no file's rows are ever held."""
 
-    def __init__(out self, indexing: Bool = False) raises:
+    def __init__(
+        out self, indexing: Bool = False, keep_rows: Bool = True
+    ) raises:
         self.out = List[EventRows]()
         self.cols = EventRows()
         self.rows = 0
         self.bad = 0
         self.index = HourIndex()
         self.indexing = indexing
+        self.keep_rows = keep_rows
 
     def feed(mut self, data: Span[UInt8, _], begin: Int, n: Int) raises:
         """The lines in `data[begin:n]`; a last line without its newline is
@@ -158,6 +181,19 @@ struct EventParser(Movable):
         var f = scan_event(data, line)
         if not (f.id.found() and f.created_at.found()):
             self.bad += 1
+            return
+        if not self.keep_rows:
+            # The index alone, from the same fields as below.
+            if self.indexing:
+                var p = f.payload
+                self.index.add(
+                    text(data, f.type),
+                    text(data, f.repo_name),
+                    text(data, f.actor_login),
+                    timestamp_micros(data, f.created_at),
+                    data[p.start : p.end] if p.found() else data[0:0],
+                )
+            self.rows += 1
             return
         self.cols.id.add(_int(text(data, f.id)))
         _add_text(self.cols.type, data, f.type, False)
@@ -195,7 +231,7 @@ struct EventParser(Movable):
     def finish_index(deinit self) raises -> EventsAndIndex:
         """The last files' rows, and what `index` collected."""
         var out = self.out^
-        if self.rows % ROWS_PER_BATCH != 0:
+        if self.keep_rows and self.rows % ROWS_PER_BATCH != 0:
             out.append(self.cols^)
         else:
             _ = self.cols^
@@ -216,6 +252,17 @@ comptime CHUNK = 1 << 23
 The decoder's output buffer is twice this and is compacted after each
 window, so the decoded JSON in memory stays about this size however big
 the hour is."""
+
+
+struct NoRows(BatchSink, Movable):
+    """A sink for a parser that builds no rows (`keep_rows=False`): it is
+    never given any."""
+
+    def __init__(out self):
+        pass
+
+    def put(mut self, var rows: EventRows) raises:
+        raise Error("gharchive: rows for an hour that keeps none")
 
 
 struct Collect(BatchSink, Movable):
@@ -275,17 +322,24 @@ def decode_gz[
 
 def decode_index[
     I: GzInput, S: BatchSink
-](input: I, mut sink: S, mut index: HourIndex, indexing: Bool) raises -> Timing:
+](
+    input: I,
+    mut sink: S,
+    mut index: HourIndex,
+    indexing: Bool,
+    keep_rows: Bool = True,
+) raises -> Timing:
     """A `.json.gz` hour, gunzipped a window at a time into the parser, so
     the hour's JSON is never in memory at once; each batch goes to `sink`
     as soon as it is full. The input may still be arriving: what is there
-    is decoded, and the wait is only for what the inflater needs next."""
+    is decoded, and the wait is only for what the inflater needs next.
+    Without `keep_rows` the sink gets nothing and only `index` is built."""
     var t_start = perf_counter_ns()
     var inflate_ns = 0
     var sink_ns = 0
     var wait_ns = 0
     var gz = GzipReader(CHUNK * 2)
-    var p = EventParser(indexing)
+    var p = EventParser(indexing, keep_rows)
     # `lo` is where the parser has got to in the decoder's output: lines
     # before it are done and can be dropped. Each round inflates up to about
     # CHUNK more bytes of what has arrived, parses the whole lines among
@@ -341,16 +395,52 @@ def decode_index[
     )
 
 
+def decode_hour[
+    I: GzInput
+](
+    input: I,
+    var events: Optional[TableWriter],
+    candidates: Table,
+    repo_hour: Table,
+    releases: Table,
+) raises -> DataFiles:
+    """An hour's `.json.gz` into its files, uncommitted: the events through
+    `events` if given, and the three index tables. Without `events`
+    (`GHARCHIVE_EVENTS=off`) the parser builds only the index, from the
+    same parse, so the index files are the same as with it."""
+    # No marker rows: the step commits the index a day at a time.
+    var index = HourIndex()
+    var out: DataFiles
+    var timing: Timing
+    if events:
+        var w = events.take()
+        timing = decode_index(input, w, index, True)
+        out = w^.finish()
+    else:
+        var none = NoRows()
+        timing = decode_index(input, none, index, True, keep_rows=False)
+        out = DataFiles()
+        out.rows = index.events
+    var t_index = perf_counter_ns()
+    out.index = write_index(index, candidates, repo_hour, releases)
+    out.index_ms = Int(perf_counter_ns() - t_index) // 1_000_000
+    out.gunzip_ms = timing.gunzip_ms
+    out.parse_ms = timing.parse_ms
+    out.wait_ms = timing.wait_ms
+    return out^
+
+
 def fetch_hour(
     day: String,
     hour: Int,
-    table: Table,
+    table: Optional[Table],
     candidates: Table,
     repo_hour: Table,
     releases: Table,
 ) raises -> DataFiles:
     """Downloads one hour of GH Archive and, as it arrives, decompresses
-    and parses it and writes it into `table`'s data files; returns them
+    and parses it and writes it into `table`'s data files (none without a
+    `table`: `GHARCHIVE_EVENTS=off`) and the index tables'; returns them
     uncommitted."""
     var t0 = perf_counter_ns()
     # The download starts on its own thread here and the decoding below
@@ -359,17 +449,10 @@ def fetch_hour(
     # Each 50,000-row file is in (repo, type) order: a repository's events
     # repeat its URLs, and rows that resemble each other share a page. On
     # real files that is 7% smaller than (type, repo), 18% than arrival order.
-    var w = TableWriter(table)
-    # No marker rows: the step commits the index a day at a time.
-    var index = HourIndex()
-    var timing = decode_index(dl, w, index, True)
-    var out = w^.finish()
-    var t_index = perf_counter_ns()
-    out.index = write_index(index, candidates, repo_hour, releases)
-    out.index_ms = Int(perf_counter_ns() - t_index) // 1_000_000
+    var w = Optional[TableWriter]()
+    if table:
+        w = TableWriter(table.value())
+    var out = decode_hour(dl, w^, candidates, repo_hour, releases)
     out.download_ms = dl.ms()
-    out.gunzip_ms = timing.gunzip_ms
-    out.parse_ms = timing.parse_ms
-    out.wait_ms = timing.wait_ms
     out.total_ms = Int(perf_counter_ns() - t0) // 1_000_000
     return out^

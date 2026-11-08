@@ -6,7 +6,10 @@
 #     the run a number) and ends with exactly the same rows and one commit
 #     of each index table, rebuilding the skipped hours from the events,
 #   - a failure after the index commits is retried without committing again,
-#   - a rerun of the day replaces all four tables' rows.
+#   - a rerun of the day replaces all four tables' rows,
+#   - with GHARCHIVE_EVENTS=off the index rows are the same, nothing is
+#     written to gharchive.events, and a retry (after 2 hours, or after the
+#     index commits) and a rerun leave one copy of the rows.
 #
 #   scripts/test-daily.sh build/gharchive-main build/gharchive
 #
@@ -77,4 +80,42 @@ same "$W/old" "$W/new"
 for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
   [ "$(snaps "$W/new" $t)" = 2 ] || fail "again: $t not two snapshots"
 done
+echo "== GHARCHIVE_EVENTS=off: the same index, no events"
+GHARCHIVE_EVENTS=off ORCA_WAREHOUSE=$W/off $NEW run --partitions $DAY > "$W/off.log"
+same "$W/old" "$W/off"
+[ -e "$W/off/gharchive/events" ] && fail "off: wrote gharchive.events"
+for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
+  [ "$(snaps "$W/off" $t)" = 1 ] || fail "off: $t not one snapshot"
+done
+
+echo "== GHARCHIVE_EVENTS=off, fails after 2 hours, retried"
+GHARCHIVE_EVENTS=off ORCA_DATABASE_URL=sqlite:///$W/off-resume.db \
+  ORCA_WAREHOUSE=$W/off-resume GHARCHIVE_FAIL_AFTER=2 \
+  $NEW run --partitions $DAY > "$W/off-resume.log"
+grep -q "GHARCHIVE_FAIL_AFTER=2" "$W/off-resume.log" || fail "off: no failure"
+same "$W/old" "$W/off-resume"
+for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
+  [ "$(snaps "$W/off-resume" $t)" = 1 ] || fail "off resume: $t committed twice"
+done
+
+echo "== GHARCHIVE_EVENTS=off, fails after the index commits, retried"
+GHARCHIVE_EVENTS=off ORCA_DATABASE_URL=sqlite:///$W/off-end.db \
+  ORCA_WAREHOUSE=$W/off-end GHARCHIVE_FAIL_AFTER=end \
+  $NEW run --partitions $DAY > "$W/off-end.log"
+grep -q "the index is committed already" "$W/off-end.log" \
+  || fail "off: no resume (end)"
+same "$W/old" "$W/off-end"
+for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
+  [ "$(snaps "$W/off-end" $t)" = 1 ] || fail "off end: $t committed twice"
+done
+
+echo "== GHARCHIVE_EVENTS=off, the day again over a day loaded with them"
+ev=$(digest "$W/new" gharchive.events)
+GHARCHIVE_EVENTS=off ORCA_DATABASE_URL=sqlite:///$W/new.db \
+  ORCA_WAREHOUSE=$W/new $NEW run --partitions $DAY > "$W/off-again.log"
+same "$W/old" "$W/new"
+for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
+  [ "$(snaps "$W/new" $t)" = 3 ] || fail "off again: $t not three snapshots"
+done
+[ "$(digest "$W/new" gharchive.events)" = "$ev" ] || fail "off again: events changed"
 echo "all ok"

@@ -30,10 +30,25 @@ about 300 + 450 * `GHARCHIVE_PARALLEL` MB (magmalake/mojo-census#37): the
 rows of one 50,000-row file at a time, written a 16 MB row group at a time,
 and the compressed hour only as far as it is decoded.
 
+`GHARCHIVE_EVENTS=off` (default `on`) keeps the index and drops the events:
+each hour's task parses the hour into the three index tables' rows only, as
+it does with them on (the same rows, byte for byte: tests/test_eventsoff.mojo),
+and nothing is written to `gharchive.events`, which was 97% of the bucket
+(about 1.1 GB a day). The day's index commits are as with it on, and so is a
+retry's recognition of them (`find_commit` on each index table): with
+nothing committed hour by hour, a retry before the index commits downloads
+every hour again, and one after them downloads none. A rerun of a day loaded
+with the events on leaves that day's events where they are. An hour in
+flight then takes `eventrows.HOUR_INDEX_MEMORY_MB` (about 200 MB) rather
+than `HOUR_MEMORY_MB`, so a run about 300 + 200 * `GHARCHIVE_PARALLEL` MB. The step still declares `gharchive.events` in `writes=`, so
+the pipeline's `registry_hash` (and its lineage) is the same either way: a
+declared write the step doesn't make fails nothing.
+
 `GHARCHIVE_HOURS` (`A-B` or `A,B,...`; default all 24) limits the hours, for
 trying it locally. `GHARCHIVE_FAIL_AFTER=k` (or `end`, after the index
 commits) makes the first attempt of a step fail after it committed k hours of
-events, to try a retry (`scripts/test-daily.sh`).
+events (with the events off: after k hours came back), to try a retry
+(`scripts/test-daily.sh`).
 """
 
 from std.os import getenv, setenv
@@ -48,8 +63,8 @@ from orca.tables import ensure_table, find_commit, load_dataset
 from datafiles import DataFiles
 from daymerge import merge_job, merge_repo_hour
 from days import days_of
-from eventrows import HOUR_MEMORY_MB
-from events import fetch_hour, parse_hours
+from eventrows import HOUR_INDEX_MEMORY_MB, HOUR_MEMORY_MB
+from events import fetch_hour, keep_events, parse_hours
 from hourindex import IndexFiles, write_marker
 from indexing import commit_day, commit_hour, committed_hours, day_files
 from lake import (
@@ -75,12 +90,16 @@ from reindex import index_hour, index_job
 def hour_task(day: String, hour: Int) raises -> DataFiles:
     """On a worker: the hour, written into the tables but not committed.
     The event files and the hour's three index files come back as entries
-    (`DataFiles`), which the step commits; nothing else crosses back."""
+    (`DataFiles`), which the step commits; nothing else crosses back. With
+    `GHARCHIVE_EVENTS=off` there are no event files."""
     try:
+        var events = Optional[Table]()
+        if keep_events():
+            events = load_dataset(EVENTS)
         return fetch_hour(
             day,
             hour,
-            load_dataset(EVENTS),
+            events,
             load_dataset(CANDIDATES),
             load_dataset(REPO_HOUR),
             load_dataset(GH_RELEASES),
@@ -117,13 +136,18 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
     """The step: one day of GH Archive into the four tables. Hours are read
     on workers, `window` at a time, and committed here in hour order.
     Returns the number of events committed by this attempt (a retry that
-    skipped hours counts only the rest)."""
+    skipped hours counts only the rest); with `GHARCHIVE_EVENTS=off`, the
+    number of events it parsed into the index."""
     var day = String(d)
     var hours = parse_hours(getenv("GHARCHIVE_HOURS"))
     var props = index_properties()
-    var table = ensure_table(
-        ctx, EVENTS, events_schema(), events_spec(), events_properties()
-    )
+    # `GHARCHIVE_EVENTS=off`: no events table is made, loaded or committed.
+    var keep = keep_events()
+    var events_t = Optional[Table]()
+    if keep:
+        events_t = ensure_table(
+            ctx, EVENTS, events_schema(), events_spec(), events_properties()
+        )
     var cand_t = ensure_table(
         ctx, CANDIDATES, candidates_schema(), candidates_spec(), props
     )
@@ -139,21 +163,27 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
     )
     ref rt = ctx.runtime[GhTasks]()
     # Hours in flight at once. Memory is what limits it: an hour in flight
-    # takes about 2 GB (magmalake/mojo-census#37, not yet explained or
-    # bounded), so the default of 16 is sized for several machines; orca.toml
-    # sets 2 for the 8 GB Hetzner server.
+    # takes about HOUR_MEMORY_MB (HOUR_INDEX_MEMORY_MB without the events),
+    # so the default of 16 is sized for several machines; orca.toml sets 4
+    # for the 8 GB Hetzner server.
     var window = max(1, Int(getenv("GHARCHIVE_PARALLEL", "16")))
     var in_flight = min(window, len(hours))
+    var per_hour_mb = HOUR_MEMORY_MB if keep else HOUR_INDEX_MEMORY_MB
     ctx.log(String(
         day, ": ", in_flight, " hours in flight, about ",
-        300 + in_flight * HOUR_MEMORY_MB, " MB",
+        300 + in_flight * per_hour_mb, " MB",
+        "" if keep else " (GHARCHIVE_EVENTS=off: the index only)",
     ))
 
     # Hours an earlier attempt of this step already committed to the events
     # come first in its commit order; recognise them without fetching
     # anything. The three index tables get one commit a day, at the end: an
     # attempt that got that far has made commit 0 to each (`find_commit`).
-    var d_ev = committed_hours(ctx, table, len(hours))
+    # Without the events nothing is committed by the hour, so no hour counts
+    # as done and only the index commits are recognised.
+    var d_ev = 0
+    if keep:
+        d_ev = committed_hours(ctx, events_t.value(), len(hours))
     var indexed = (
         find_commit(ctx, cand_t) >= 0
         and find_commit(ctx, hour_t) >= 0
@@ -165,8 +195,8 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
     # Rows an earlier run left for this day, which this run's first commit
     # to the events replaces (the index tables' day commit does the same).
     var old = List[String]()
-    if d_ev == 0:
-        old = day_files(table, day, "created_at")
+    if keep and d_ev == 0:
+        old = day_files(events_t.value(), day, "created_at")
         if len(old) > 0:
             ctx.log(String(
                 day, ": replacing the ", len(old),
@@ -181,7 +211,7 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
     for _ in range(len(hours)):
         idx.append(IndexFiles())
     if d_ev > 0 and not indexed:
-        var pinned = table.metadata.current_snapshot_id
+        var pinned = events_t.value().metadata.current_snapshot_id
         ctx.log(String(
             day, ": rebuilding the index of the ", d_ev,
             " committed hours from the events (snapshot ", pinned, ")",
@@ -215,34 +245,56 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
     # result on the worker), start the next one. Results are consumed in hour
     # order because the commits must be, so a slow hour holds up the commit of
     # the later ones (their tasks keep running meanwhile).
+    # Without the events, a retry after the index commits has nothing left
+    # to do but recognise them below: no hour is fetched (`first`).
+    var first = d_ev
+    if not keep and indexed:
+        first = len(hours)
+        ctx.log(String(day, ": the index is committed already"))
     var refs = List[ObjectRef[DataFiles]]()
-    var next = d_ev
-    while next < len(hours) and next - d_ev < window:
+    var next = first
+    while next < len(hours) and next - first < window:
         refs.append(rt.remote[Hour](day, hours[next]))
         next += 1
     var rows = Int64(0)
     var fail = getenv("GHARCHIVE_FAIL_AFTER")
     var fail_after = Int(fail) if fail and fail != "end" else 0
-    for i in range(d_ev, len(hours)):
-        var got = rt.get(refs[i - d_ev])
-        rt.release(refs[i - d_ev])
+    for i in range(first, len(hours)):
+        var got = rt.get(refs[i - first])
+        rt.release(refs[i - first])
         if next < len(hours):
             refs.append(rt.remote[Hour](day, hours[next]))
             next += 1
+        # The task read GHARCHIVE_EVENTS itself: the step and its workers
+        # must agree, or event files would go uncommitted (or be missing).
+        if not keep and len(got.files) > 0:
+            raise Error(
+                day, " hour ", hours[i], ": GHARCHIVE_EVENTS=off here but",
+                " the task wrote ", len(got.files), " event files",
+            )
+        if keep and got.rows > 0 and len(got.files) == 0:
+            raise Error(
+                day, " hour ", hours[i], ": GHARCHIVE_EVENTS is on here but",
+                " the task wrote no event files",
+            )
         # One snapshot of the events per hour: the first one of a rerun
         # replaces the day's old files, a retry's recommit is recognised.
         var t0 = perf_counter_ns()
-        var id: Int64
-        try:
-            id = commit_hour(ctx, table, i, d_ev, old, got.files.files)
-        except e:
-            raise Error(day, " hour ", hours[i], ": committing: ", e)
+        var id = Int64(-1)
+        if keep:
+            try:
+                id = commit_hour(
+                    ctx, events_t.value(), i, d_ev, old, got.files.files
+                )
+            except e:
+                raise Error(day, " hour ", hours[i], ": committing: ", e)
         var commit_ms = Int(perf_counter_ns() - t0) // 1_000_000
         rows += Int64(got.rows)
         ctx.log(
             String(
                 day, " hour ", hours[i], ": ", got.rows, " events in ",
-                len(got.files), " files, snapshot ", id, " (task ",
+                len(got.files), " files, snapshot ",
+                String(id) if keep else String("none"), " (task ",
                 got.total_ms, " ms: download ", got.download_ms,
                 " ms overlapping gunzip ", got.gunzip_ms, " ms, parse ",
                 got.parse_ms, " ms, sort ", got.sort_ms, " ms, write ",
@@ -299,14 +351,20 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
     ))
     if fail == "end" and ctx.attempt <= 1:
         raise Error(day, ": GHARCHIVE_FAIL_AFTER=end")
-    ctx.log(String(day, ": ", rows, " events in ", len(hours) - d_ev, " hours"))
+    ctx.log(String(
+        day, ": ", rows, " events in ", len(hours) - first, " hours",
+        "" if keep else " (not kept: GHARCHIVE_EVENTS=off)",
+    ))
     return rows
 
 
 # A `Step` wraps `load_day` with its name, input and output types and kind.
 # `Mapped` runs it once per partition of a run, here a `Day`. `writes` lists
 # the datasets it commits to (a commit to any other is refused, and the
-# lineage in the UI is drawn from it); the replace-the-day logic is done by
+# lineage in the UI is drawn from it). EVENTS stays in it with
+# GHARCHIVE_EVENTS=off: `writes` allows commits, it doesn't require them, and
+# the list is part of the registry hash, which decides which runs of a day
+# count as done; the replace-the-day logic is done by
 # hand in `indexing.commit_hour` rather than by orca's `replaces=`. `retries=2`
 # re-runs a failed attempt in the same run, which the commit recognition
 # above makes cheap.

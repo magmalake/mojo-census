@@ -64,6 +64,18 @@ where it was 1.97 GB at 2, 2.73 GB at 3 and 3.20 GB at 4 before #37 (about
 620-760 MB an hour). One hour alone peaks at 450-510 MB in its own process
 (`tools/hour_memory.mojo`), against 1.0-1.35 GB before."""
 
+comptime HOUR_INDEX_MEMORY_MB = 200
+"""`HOUR_MEMORY_MB` with `GHARCHIVE_EVENTS=off`: the hour is parsed into
+its `HourIndex` alone, with no rows, row groups or zstd contexts, so what
+an hour holds is the decode window and the index (a busy hour's 100-150K
+repo_hour cells).
+
+Measured with `tools/hour_memory.mojo ... noevents` on 2023-01-10 15:00
+(108 MB gzipped, 205,981 events), against `full` on the same hour: peak 285
+MB under Linux (aarch64, in Docker) and 297 MB on macOS, against 590 and 545
+MB; less the 108 MB of `.json.gz` the tool holds whole, about 180-190 MB an
+hour, against 440-480 MB."""
+
 
 def _meta(schema: Schema, field_id: Int) raises -> ArrayData:
     """An empty column of `schema`'s field, as `ColumnBuilder` types it."""

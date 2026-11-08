@@ -62,7 +62,8 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   gharchive_index uses), and finds the day's index commits if the attempt
   made them, so they aren't made twice. A day with no rows at all for a
   table gets one row for no repository (`repo = ""`), since a snapshot needs
-  a data file.
+  a data file. `GHARCHIVE_EVENTS=off` keeps the three tables and drops the
+  events ("Without the events" below).
 - **`pipelines/gharchive_index.mojo`**: a one-off that fills those three
   tables for days loaded before gharchive wrote them, reading each hour of
   `gharchive.events` once (`orca backfill gharchive_index <days>`).
@@ -221,7 +222,8 @@ ORCA_WAREHOUSE=s3://mlake-public-617847241090/warehouse PORT=8080 pixi run ./bui
 
 `pixi run test-daily` (network, three hours of GH Archive, about 50 seconds)
 checks gharchive's day commits against a gharchive that commits an hour at a
-time, through a failed-and-retried step and a rerun (`scripts/test-daily.sh`).
+time, through a failed-and-retried step and a rerun, and the same with
+`GHARCHIVE_EVENTS=off` (`scripts/test-daily.sh`).
 It needs that older build as `build/gharchive-main`, and `origin/main` no
 longer is one (it already commits daily, and the check fails with "old
 gharchive.candidates: not three snapshots"). Build the commit before the
@@ -276,6 +278,40 @@ all in the environment (orca.toml's `env`):
 
 `tests/test_fetch.mojo` checks them against a local server that stalls,
 fails and cuts connections (`tests/http_faults.py`, which needs `python3`).
+
+### Without the events
+
+`gharchive.events` is about 1.1 GB a day, 97% of the bucket, and only
+gharchive_index reads it. `GHARCHIVE_EVENTS=off` (default `on`) stops
+writing it: each hour's task parses the hour into the rows of
+`gharchive.candidates`, `gharchive.repo_hour` and `gharchive.releases` only,
+from the same parse as with the events on, so those rows are the same, byte
+for byte (`tests/test_eventsoff.mojo` runs one hour both ways and compares
+the files; `scripts/test-daily.sh` compares three real hours). Nothing is
+written to `gharchive.events`, and the table isn't created if it is missing.
+
+- An hour in flight takes about 200 MB instead of about 450 MB: no
+  rows, no Parquet row groups, no zstd contexts (`eventrows.HOUR_INDEX_MEMORY_MB`,
+  `tools/hour_memory.mojo ... noevents`).
+- Retries: the index tables are still committed once a day, and a retry
+  still finds those commits (`find_commit` on each of them) rather than
+  committing twice. With no hourly commits to skip, a retry before the
+  index commits downloads every hour again, and one after them downloads
+  nothing.
+- A rerun of a day loaded with the events on replaces its index rows and
+  leaves its events where they are.
+- The step still declares `gharchive.events` in `writes=`: a declared write
+  that isn't made fails nothing, and the declaration is part of the
+  pipeline's registry hash, so the hash, and which runs count as done, is
+  the same whichever way it is set.
+- What reads `gharchive.events` gets no new days: gharchive_index (paused;
+  it has nothing to do for a day without events), the console's count of
+  loaded days (`model.read_days`, from the events' snapshots), and the
+  tools (`dump_index gharchive.events`, `events_digest`,
+  `compare_activity`, `drop_run`).
+
+It is set in the environment of the server's gharchive pipeline (orca.toml's
+`env` is where it would go).
 
 ### The orca way: Postgres, the scheduler and the UI
 
