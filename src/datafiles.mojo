@@ -46,6 +46,9 @@ struct DataFiles(Copyable, Movable):
     """The hour's candidates, repository counts and releases."""
     var index_ms: Int
     """Building them and writing their files."""
+    var missing: Bool
+    """GH Archive has no file for the hour (`events.hour_overdue`): no
+    rows and no files, and the step goes on without it."""
 
     def __init__(out self):
         self.files = FileEntries()
@@ -59,6 +62,7 @@ struct DataFiles(Copyable, Movable):
         self.total_ms = 0
         self.index = IndexFiles()
         self.index_ms = 0
+        self.missing = False
 
 
 def write_threads() raises -> Int:

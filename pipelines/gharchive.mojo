@@ -44,6 +44,13 @@ than `HOUR_MEMORY_MB`, so a run about 300 + 200 * `GHARCHIVE_PARALLEL` MB. The s
 the pipeline's `registry_hash` (and its lineage) is the same either way: a
 declared write the step doesn't make fails nothing.
 
+GH Archive never published a few hours, such as 2025-06-12's 17:00. A 404
+for an hour that ended more than `GHARCHIVE_MISSING_AFTER_HOURS` (48) ago is
+such a gap (`events.hour_overdue`): with the events off the day is loaded
+without it and the log names it; a 404 for a more recent hour still fails
+the day, since it may only be late. With the events on, a gap fails the day
+too, because a retry finds the committed hours by their position (#77).
+
 `GHARCHIVE_HOURS` (`A-B` or `A,B,...`; default all 24) limits the hours, for
 trying it locally. `GHARCHIVE_FAIL_AFTER=k` (or `end`, after the index
 commits) makes the first attempt of a step fail after it committed k hours of
@@ -55,6 +62,7 @@ from std.os import getenv, setenv
 from std.time import perf_counter_ns
 
 from dista import ObjectRef, Task, Task2
+from orca.civil import now
 from orca import Cron, Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, orca_main
 from iceberg.catalog.filesystem import Table
 from iceberg.manifest import DataFile
@@ -64,7 +72,7 @@ from datafiles import DataFiles
 from daymerge import merge_job, merge_repo_hour
 from days import days_of
 from eventrows import HOUR_INDEX_MEMORY_MB, HOUR_MEMORY_MB
-from events import fetch_hour, keep_events, parse_hours
+from events import fetch_hour, hour_overdue, hour_url, keep_events, not_found, parse_hours
 from hourindex import IndexFiles, write_marker
 from indexing import commit_day, commit_hour, committed_hours, day_files
 from lake import (
@@ -91,7 +99,8 @@ def hour_task(day: String, hour: Int) raises -> DataFiles:
     """On a worker: the hour, written into the tables but not committed.
     The event files and the hour's three index files come back as entries
     (`DataFiles`), which the step commits; nothing else crosses back. With
-    `GHARCHIVE_EVENTS=off` there are no event files."""
+    `GHARCHIVE_EVENTS=off` there are no event files. An hour GH Archive
+    never published comes back empty with `missing` set (`hour_overdue`)."""
     try:
         var events = Optional[Table]()
         if keep_events():
@@ -105,7 +114,12 @@ def hour_task(day: String, hour: Int) raises -> DataFiles:
             load_dataset(GH_RELEASES),
         )
     except e:
-        raise Error(day, " hour ", hour, ": ", e)
+        var err = String(e)
+        if not_found(err) and hour_overdue(day, hour, Int(now())):
+            var gone = DataFiles()
+            gone.missing = True
+            return gone^
+        raise Error(day, " hour ", hour, ": ", err)
 
 
 # A dista `Task` is a function that runs on a worker process (`Task2` takes
@@ -257,6 +271,7 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
         refs.append(rt.remote[Hour](day, hours[next]))
         next += 1
     var rows = Int64(0)
+    var missing = List[Int]()
     var fail = getenv("GHARCHIVE_FAIL_AFTER")
     var fail_after = Int(fail) if fail and fail != "end" else 0
     for i in range(first, len(hours)):
@@ -265,6 +280,25 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
         if next < len(hours):
             refs.append(rt.remote[Hour](day, hours[next]))
             next += 1
+        # An hour GH Archive never published (#77): with the events off the
+        # day goes on without it, its index files left empty. With them on
+        # every hour is one snapshot of the events and a retry counts the
+        # committed hours by position, so a gap there still fails the day.
+        if got.missing:
+            if keep:
+                raise Error(
+                    day, " hour ", hours[i], ": GH Archive has no file for",
+                    " it (HTTP 404), and with GHARCHIVE_EVENTS=on every hour",
+                    " is one snapshot of the events; load the day with",
+                    " GHARCHIVE_EVENTS=off",
+                )
+            missing.append(hours[i])
+            ctx.log(String(
+                day, " hour ", hours[i], ": GH Archive has no file for it",
+                " (HTTP 404, ", hour_url(day, hours[i]), "); the day goes on",
+                " without it",
+            ))
+            continue
         # The task read GHARCHIVE_EVENTS itself: the step and its workers
         # must agree, or event files would go uncommitted (or be missing).
         if not keep and len(got.files) > 0:
@@ -309,6 +343,16 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
         # A test hook: the first attempt fails after this many hours.
         if fail_after > 0 and ctx.attempt <= 1 and i + 1 == fail_after:
             raise Error(day, ": GHARCHIVE_FAIL_AFTER=", fail_after)
+
+    if len(missing) > 0:
+        var names = String()
+        for h in missing:
+            names.write(", " if names else "", h)
+        ctx.log(String(
+            day, ": loaded without ", len(missing), " hour",
+            "s" if len(missing) > 1 else "", " GH Archive never published (",
+            names, ")",
+        ))
 
     # One commit a day to each index table, all 24 hours' files in hour order.
     var t1 = perf_counter_ns()
