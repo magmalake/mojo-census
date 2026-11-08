@@ -17,7 +17,9 @@ from deps import (
     github_repo,
     is_recipe,
     manifest_deps,
+    most_depended,
     norm_name,
+    owner_of,
     resolve,
 )
 
@@ -338,6 +340,54 @@ def test_resolve() raises:
     assert_true("modular/modular" not in g.used_by)
     assert_true("thatstoasty/floki" not in g.used_by)
     assert_equal(len(g.declared["thatstoasty/floki"]), 9)
+
+
+def test_most_depended() raises:
+    # `a`'s repositories use each other; `A/two` is the same owner as `a/one`.
+    var repos: List[String] = ["a/one", "A/two", "b/lib", "a/three", "c/x", "c/y", "d/z"]
+    var used_by: List[List[String]] = [
+        ["A/two", "a/three", "e/app"],
+        ["a/three", "e/app", "f/app"],
+        ["e/app", "f/app"],
+        [],
+        ["c/y", "e/app"],
+        ["e/app"],
+        ["e/app"],
+    ]
+    var stars: List[Int64] = [5, 1, 9, 0, 2, 3, 4]
+    var forks: List[Int64] = [1, 2, 0, 0, 0, 1, 0]
+    assert_equal(owner_of("A/two"), "a")
+    # a/one and A/two would both be in the top 3: one row for `a`, counting
+    # the four distinct repos that use either, two of them `a`'s own.
+    var top = most_depended(repos, used_by, stars, forks, 3)
+    assert_equal(len(top), 3)
+    assert_equal(top[0].name, "a/*")
+    assert_true(top[0].group)
+    assert_equal(top[0].used_by, 4)
+    assert_equal(top[0].internal, 2)
+    assert_equal(len(top[0].members), 2)
+    assert_equal(top[0].members[0], 0)
+    assert_equal(top[0].stars, 6)
+    assert_equal(top[0].forks, 3)
+    assert_equal(top[1].name, "b/lib")
+    assert_true(not top[1].group)
+    assert_equal(top[1].used_by, 2)
+    assert_equal(top[1].internal, 0)
+    assert_equal(top[1].stars, 9)
+    assert_equal(top[2].name, "c/x")
+    assert_equal(top[2].internal, 1)
+    # A fourth slot brings c/y in beside c/x: `c` is collapsed in turn and
+    # the slot goes to d/z.
+    top = most_depended(repos, used_by, stars, forks, 4)
+    assert_equal(len(top), 4)
+    assert_equal(top[2].name, "c/*")
+    assert_equal(top[2].used_by, 2)
+    assert_equal(top[2].internal, 1)
+    assert_equal(top[2].stars, 5)
+    assert_equal(top[3].name, "d/z")
+    # Nothing depended on: no rows.
+    var none: List[List[String]] = [[], [], [], [], [], [], []]
+    assert_equal(len(most_depended(repos, none, stars, forks, 10)), 0)
 
 
 def main() raises:
