@@ -1,4 +1,5 @@
-"""The gharchive pipeline: each day of GH Archive into `gharchive.events`.
+"""Loads each day of GH Archive and builds the candidates, repo_hour and
+releases tables from it.
 
 Daily from 2023-01-01, at 03:00 UTC for the day before. A day's step fans
 its hours out as dista tasks, at most `GHARCHIVE_PARALLEL` (default 16: 4 instances of 4 worker processes) at a time. A
@@ -96,7 +97,8 @@ from reindex import index_hour, index_job
 
 
 def hour_task(day: String, hour: Int) raises -> DataFiles:
-    """On a worker: the hour, written into the tables but not committed.
+    """Downloads and parses one hour of GH Archive on a worker and writes its
+    rows, uncommitted.
     The event files and the hour's three index files come back as entries
     (`DataFiles`), which the step commits; nothing else crosses back. With
     `GHARCHIVE_EVENTS=off` there are no event files. An hour GH Archive
@@ -147,7 +149,8 @@ def _marker_if_empty(
 
 
 def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
-    """The step: one day of GH Archive into the four tables. Hours are read
+    """Loads one day of GH Archive into the candidates, repo_hour and
+    releases tables, and into the events when they are kept. Hours are read
     on workers, `window` at a time, and committed here in hour order.
     Returns the number of events committed by this attempt (a retry that
     skipped hours counts only the rest); with `GHARCHIVE_EVENTS=off`, the

@@ -1,4 +1,5 @@
-"""The mojo_history pipeline: each Mojo repository's history.
+"""Clones each newly found Mojo repository and records its commits, tooling and
+version changes, and tags.
 
 Keyed by the `repo` column of `mojo.repos` (`owner/name`), 50 repositories
 a run, and a sensor, so each snapshot mojo_repos commits starts runs for the
@@ -117,9 +118,10 @@ def _done(mut ctx: Ctx, dataset: String = COMMITS) raises -> Dict[String, Bool]:
 
 
 def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
-    """The step: reads the history of each repository in `keys` (up to 50,
-    the run's keys) and appends the new rows, one snapshot a table. Returns
-    the number of commits appended.
+    """Reads the git history of up to 50 repositories and appends their new
+    commits, migrations and tags.
+    The repositories are the run's `keys`, and each table gets one snapshot.
+    Returns the number of commits appended.
 
     A repository falls in one of three groups, decided by what the tables
     already hold: both commits and tags (skipped); commits but no tags

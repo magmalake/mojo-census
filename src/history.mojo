@@ -481,9 +481,11 @@ def _parse_log(repo: String, dir: String, log: String, mut out: History) raises:
 
 
 def read_history(repo: String) raises -> History:
-    """Clones `repo` from GitHub and reads its history. Errors (a repository
-    gone, a clone that failed, history that doesn't parse) come back in
-    `error`, so one bad repository doesn't fail the rest of its run."""
+    """Clones one repository from GitHub on a worker and reads its commits,
+    version changes and tags.
+    Errors (a repository gone, a clone that failed, history that doesn't
+    parse) come back in `error`, so one bad repository doesn't fail the rest
+    of its run."""
     var out = History.empty(repo)
     try:
         _read_history(repo, out)
@@ -499,8 +501,10 @@ def read_history(repo: String) raises -> History:
 
 
 def read_tags(repo: String) raises -> History:
-    """Only `repo`'s tags (no commits), from a bare clone without file
-    contents (`--filter=blob:none`); errors come back in `error`."""
+    """Reads only one repository's git tags on a worker, from a clone without
+    file contents.
+    No commits: a bare clone with `--filter=blob:none`; errors come back in
+    `error`."""
     var out = History.empty(repo)
     if not safe_repo(repo):
         out.error = String("not a repository name: ", repo)

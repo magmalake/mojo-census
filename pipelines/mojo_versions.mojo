@@ -1,4 +1,7 @@
-"""The mojo_versions pipeline: the Mojo version each repository states at its
+"""Records the Mojo version and the dependencies each repository states in its
+latest commit, with a version estimated by date.
+
+The mojo_versions pipeline: the Mojo version each repository states at its
 HEAD, for the ones whose lock file and manifest name none, and an estimate by
 date; and the dependencies its manifests declare at HEAD.
 
@@ -51,10 +54,10 @@ comptime VersionTasks = Tasks[ReadHead]
 
 
 def versions(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
-    """The step: reads the HEAD of each repository in `keys` (up to 50) and
-    replaces those repositories' rows of `mojo.repo_deps` and
-    `mojo.repo_versions`, a snapshot each. Returns the number of repositories
-    read."""
+    """Reads the latest commit of up to 50 repositories and replaces their rows
+    in mojo.repo_versions and mojo.repo_deps.
+    The repositories are the run's `keys`, and each table gets one snapshot.
+    Returns the number of repositories read."""
     # `ensure_table` adds `declared_deps` to a `mojo.repo_versions` made
     # before it; the old rows read it as null.
     var t = ensure_table(ctx, REPO_VERSIONS, repo_versions_schema())

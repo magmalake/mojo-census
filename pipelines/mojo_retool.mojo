@@ -1,5 +1,5 @@
-"""The mojo_retool pipeline: read repositories' histories again and replace
-their rows in `mojo.commits`, `mojo.migrations` and `mojo.tags`.
+"""Reads repositories' git histories again and replaces their rows in the
+commits, migrations and tags tables.
 
 A one-off for when `history.read_history` learns something new about the
 commits it already read (Bazel as a tooling, 2026-11): keyed by the `repo`
@@ -73,9 +73,10 @@ def _all_files(mut ctx: Ctx, dataset: String) raises -> _Files:
 
 
 def retool(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
-    """The step: re-reads the history of each repository in `keys` that
-    mojo_history has read, and rewrites the three tables with its rows
-    replaced. Returns the number of repositories re-read.
+    """Reads again the history of each repository mojo_history has read and
+    rewrites the three history tables with the new rows.
+    The repositories are the run's `keys`. Returns the number of repositories
+    re-read.
 
     The tables are unpartitioned, so a repository's rows can't be replaced
     by partition: the whole table is read, the rows of the re-read
