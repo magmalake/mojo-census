@@ -445,8 +445,13 @@ a listener of its own, so slow page renders don't delay workers.
 ### Edge caching
 
 The console answers pages and JSON with `Cache-Control: public, max-age=60,
-s-maxage=1800` (the warming-up page, `/checks` and any answer but a 200
-with `no-store`): a minute in the browser, 30 minutes at Cloudflare, the refresher's period. The tunnel's
+s-maxage=1800, stale-while-revalidate=60, stale-if-error=86400` (the
+warming-up page, `/checks` and any answer but a 200 with `no-store`): a
+minute in the browser, 30 minutes at Cloudflare, the refresher's period.
+Cloudflare may then serve its copy for a minute while it refetches, and for
+a day while the console can't answer, so a deploy's restart (connection
+refused, then the warming-up 503) shows readers the last page, not an error.
+Only pages someone has fetched recently at that edge have a copy. The tunnel's
 traffic goes through Cloudflare's proxy, but by default Cloudflare caches only
 static file types, never HTML (`cf-cache-status: DYNAMIC`), so mojourney.dev
 needs a cache rule: Caching → Cache Rules → hostname equals `mojourney.dev`,
