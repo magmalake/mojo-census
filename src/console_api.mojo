@@ -6,7 +6,7 @@ from flare.http import Request, Response, internal_error, not_found, ok_json
 
 from days import day_text
 from jscan import micros_to_iso
-from model import Library
+from model import Library, stored_total
 from overview import ARCHIVE_START, RISING_FORK_WEIGHT, RISING_USED_BY_WEIGHT, archive_days_due
 from search import url_decode, version_bucket, version_family
 
@@ -50,8 +50,21 @@ def overview_json(req: Request, c: Cache) raises -> Response:
         ',"commits_prev_30d":', ov.commits_prev_30, ',"mojo_lines":', ov.lines,
         ',"mojo_lines_30d_ago":', ov.lines_30_ago, ',"new_repos_this_month":', ov.new_this_month,
         ',"new_repos_last_month":', ov.new_last_month, ',"active_repos":', ov.active,
-        ',"buckets":[',
+        ',"input":{',
     )
+    # What the lake holds, by the tables' current snapshots (`read_stored`).
+    var all = stored_total(c.sources.stored)
+    out.write(
+        '"records":', all.records, ',"bytes":', all.bytes, ',"gharchive_days":', c.sources.days,
+        ',"gharchive_event_days":', c.sources.event_days, ',"tables":[',
+    )
+    for i in range(len(c.sources.stored)):
+        ref st = c.sources.stored[i]
+        out.write(
+            "," if i > 0 else "", '{"table":', _q(st.table), ',"records":', st.records,
+            ',"bytes":', st.bytes, "}",
+        )
+    out += ']},"buckets":['
     for i in range(len(ov.buckets)):
         if i > 0:
             out += ","

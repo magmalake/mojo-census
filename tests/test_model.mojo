@@ -26,7 +26,7 @@ from lake import (
     ts,
     ts_or_null,
 )
-from model import Sources, count_days, libraries
+from model import Sources, Stored, count_days, libraries, stored_of, stored_total
 from overview import Builder, top_gains
 
 comptime REPOS_NO_TOPICS = (
@@ -336,6 +336,9 @@ def test_days_loaded_with_and_without_the_events() raises:
     # The coverage counts the days up to `until` (none past it), and all of
     # them without one; each day once, whichever table names it.
     assert_equal(after.archive_days, 3)
+    # The raw events are kept for the days the events table names.
+    assert_equal(after.event_days, 2)
+    assert_equal(no_events.event_days, 0)
     var until = Sources()
     count_days(until, events.copy(), off_rh^, "2024-06-12")
     assert_equal(until.days, 3)
@@ -350,6 +353,49 @@ def test_coverage_skips_days_before_the_start() raises:
     count_days(src, None, rh^, "2023-01-01")
     assert_equal(src.days, 3)
     assert_equal(src.archive_days, 1)
+
+
+def test_stored_from_the_snapshot_summaries() raises:
+    """What a table holds is its current snapshot's totals, carried forward
+    by every commit: rows and data-file bytes, nothing scanned."""
+    var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-stored-", perf_counter_ns())
+    var cat = FilesystemCatalog.local(dir)
+    var s = Schema.parse(
+        '{"schema-id":0,"type":"struct","fields":['
+        '{"id":1,"name":"n","required":false,"type":"long"}]}'
+    )
+    var t = cat.create_table("gharchive", "events", s)
+    assert_true(not stored_of("gharchive.events", t))
+    for k in range(2):
+        var c = ColumnBuilder.of(s, 1)
+        for i in range(3 + k):
+            c.add(Datum.long_(Int64(i)))
+        _ = t.append([batch_of([c^])])
+    var got = stored_of("gharchive.events", t).value().copy()
+    assert_equal(got.table, "gharchive.events")
+    assert_equal(got.records, 7)
+    var size = Int64(0)
+    for ref sn in t.metadata.snapshots:
+        size += Int64(Int(sn.summary["added-files-size"]))
+    assert_true(size > 0)
+    assert_equal(got.bytes, size)
+    # A summary without the totals counts as nothing.
+    _ = t.metadata.snapshots[len(t.metadata.snapshots) - 1].summary.pop("total-records")
+    assert_equal(stored_of("gharchive.events", t).value().records, 0)
+    var all: List[Stored] = [
+        Stored("gharchive.events", 100, 1000),
+        Stored("gharchive.repo_hour", 20, 300),
+        Stored("mojo.commits", 5, 40),
+        Stored("mojo.repos", 1, 7),
+    ]
+    var total = stored_total(all)
+    assert_equal(total.records, 126)
+    assert_equal(total.bytes, 1347)
+    assert_equal(stored_total(all, "gharchive.").records, 120)
+    assert_equal(stored_total(all, "mojo.").bytes, 47)
+    assert_equal(stored_total(all, "mojo.commits").records, 5)
+    assert_equal(stored_total(List[Stored](), "mojo.").records, 0)
+    _ = run(String("rm -rf '", dir, "'"))
 
 
 def main() raises:

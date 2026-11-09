@@ -5,10 +5,11 @@ on."""
 from flare.http import Request, Response, html_escape, internal_error, redirect
 from orca.civil import now
 
-from charts import compact, donut, line_chart
+from charts import compact, compact_bytes, donut, line_chart
 from days import day_text
 from jscan import micros_to_iso
 from listing import ListQuery, list_url, with_new
+from model import Stored, stored_total
 from overview import (
     ARCHIVE_START,
     RISING_FORK_WEIGHT,
@@ -40,6 +41,56 @@ def _kpi(label: String, value: String, note: String, href: String = "", help: St
     if href.byte_length() > 0:
         return String("<a class=kpi href='", html_escape(href), "'>", inner, "</a>")
     return String("<div class=kpi>", inner, "</div>")
+
+
+def _held(st: Stored, noun: String) -> String:
+    """`1,234,567 events, 41 GB`."""
+    return String(_n(st.records), " ", noun, ", ", compact_bytes(st.bytes))
+
+
+def _input_kpi(c: Cache) -> String:
+    """The Input processed card: what the lake holds now, records and bytes,
+    from the tables' snapshot summaries (`model.read_stored`), with GH
+    Archive's raw events, its index and the census tables apart in the
+    help."""
+    ref src = c.sources
+    var all = stored_total(src.stored)
+    var events = stored_total(src.stored, "gharchive.events")
+    var index = Stored("", 0, 0)
+    for name in ["gharchive.candidates", "gharchive.repo_hour", "gharchive.releases"]:
+        var st = stored_total(src.stored, name)
+        index.records += st.records
+        index.bytes += st.bytes
+    var census = stored_total(src.stored, "mojo.")
+    var commits = stored_total(src.stored, "mojo.commits")
+    var note = String("nothing loaded yet")
+    if all.records > 0 or src.days > 0:
+        note = String(
+            compact(all.records), " records in ", len(src.stored), " table" if len(src.stored) == 1 else " tables",
+            ", from ", _n(Int64(src.days)), " day" if src.days == 1 else " days", " of GH Archive and ",
+            _n(Int64(c.ov.with_history)), " git history" if c.ov.with_history == 1 else " git histories",
+        )
+    var events_line = String(
+        "not kept for any day loaded so far" if events.records == 0
+        else String(_held(events, "events"), ", the ", _n(Int64(src.event_days)), " days loaded with them kept")
+    )
+    return _kpi(
+        "Input processed", compact_bytes(all.bytes), note,
+        help=_help(
+            "h-kpi-input", "Input processed",
+            String(
+                "What the lake holds now: the rows of its tables and the size of their Parquet data files",
+                " (zstd), by each table's current snapshot (Iceberg's <em>total-records</em> and",
+                " <em>total-files-size</em>). GH Archive's raw events (gharchive.events): ", events_line,
+                ". Its index, the candidates, repo-hours and releases of every day loaded",
+                " (gharchive.candidates, repo_hour, releases): ", _held(index, "rows"),
+                ". The census's tables (mojo.*), read from the repos' git histories and GitHub: ",
+                _held(census, "rows"), ", of them ", _n(commits.records), " commits.",
+                " Not recorded: the bytes downloaded from GH Archive (one .json.gz file an hour),",
+                " and the events of the days whose raw events aren't kept.",
+            ),
+        ),
+    )
 
 
 def _pct(part: Int, whole: Int) -> String:
@@ -271,6 +322,7 @@ def overview(req: Request, c: Cache) raises -> Response:
                     " time, so this page fills in as they catch up.",
                 )
             )
+            h.write("<div class=kpis>", _input_kpi(c), "</div>")
             return _page("", h^, "overview")
         var dc = ov.commits_30 - ov.commits_prev_30
         # Coverage: the repos whose history is read, and the GH Archive days
@@ -347,6 +399,7 @@ def overview(req: Request, c: Cache) raises -> Response:
                 ),
                 help=_help("h-kpi-new", "New repos this month", hist_help),
             ),
+            _input_kpi(c),
             "</div>",
         )
         # Repos per Mojo version family.
