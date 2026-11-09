@@ -15,6 +15,7 @@ replace mode, and magmalake/iceberg.mojo#83).
 
 from iceberg.catalog.filesystem import Table
 from iceberg.commit import FileChanges
+from iceberg.scan import FileScanTask
 from orca import Ctx
 from orca.tables import append, commit, find_commit, write_files
 from parquet import RecordBatch
@@ -24,10 +25,12 @@ from parquet import RecordBatch
 struct PartitionFiles(Copyable, Movable):
     """Data files found by `partition_files`: their paths, and the rows they
     hold according to the manifests (which callers compare with the rows they
-    actually read, to be sure they read everything they are about to remove)."""
+    actually read, to be sure they read everything they are about to remove).
+    `tasks` are the planned reads of those files (`read_partition_files`)."""
 
     var paths: List[String]
     var rows: Int64
+    var tasks: List[FileScanTask]
 
 
 def partition_files(
@@ -36,7 +39,7 @@ def partition_files(
     """The current snapshot's data files whose first partition value is one
     of `partitions`, and how many rows they hold. `filter`, a row filter the
     partitions' rows all match, lets planning skip the other manifests."""
-    var out = PartitionFiles(List[String](), 0)
+    var out = PartitionFiles(List[String](), 0, List[FileScanTask]())
     if not t.metadata.has_current_snapshot:
         return out^
     # `plan_files` lists the files without reading them. The filter only
@@ -50,7 +53,19 @@ def partition_files(
         if Int(f.partition[0].i) in partitions:
             out.paths.append(f.file_path)
             out.rows += f.record_count
+            out.tasks.append(task.copy())
     return out^
+
+
+def read_partition_files(
+    t: Table, files: PartitionFiles, filter: String = '["true"]'
+) raises -> List[RecordBatch]:
+    """The rows of the files `partition_files` found, read from its planned
+    tasks: only those files, without planning the table again. `filter` is
+    the one they were planned with."""
+    if len(files.tasks) == 0:
+        return List[RecordBatch]()
+    return t.scan().filter(filter).to_batches_for_tasks(files.tasks.copy())
 
 
 def already_committed(ctx: Ctx, t: Table) -> Bool:
