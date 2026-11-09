@@ -131,8 +131,9 @@ COPY --from=build /src/project/.pixi/envs/default/ssl /src/project/.pixi/envs/de
 COPY --from=build /src/project/.pixi/envs/default/ssl /opt/orca/ssl
 # The census's settings, and what `orca register` (no arguments) reads: every
 # pipeline in orca.toml, from ORCA_PIPELINES_DIR, with the commit and source
-# these were built from.
-COPY --from=build /src/project/orca.toml /opt/orca/orca.toml
+# these were built from. orca.dev.toml is the dev stack's (no fills, no
+# worker pool), which it reads with ORCA_CONFIG=/opt/orca/orca.dev.toml.
+COPY --from=build /src/project/orca.toml /src/project/orca.dev.toml /opt/orca/
 ARG ORCA_SOURCE=""
 ARG ORCA_COMMIT=""
 ENV ORCA_CONFIG=/opt/orca/orca.toml ORCA_PIPELINES_DIR=/opt/orca/pipelines \

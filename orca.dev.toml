@@ -1,0 +1,47 @@
+# The dev stack's orca.toml (magmalake/orca.mojo docs/hetzner.md, "A dev
+# stack"). The image has it at /opt/orca/orca.dev.toml beside orca.toml; the
+# dev stack's EXTRA_ENV_FILE sets ORCA_CONFIG=/opt/orca/orca.dev.toml, so
+# `orca register` (no arguments) in its scheduler reads this file instead.
+#
+# The same pipelines as orca.toml, with the same settings, except:
+#
+# - No fills: `fills` is absent, so every pipeline has orca's default,
+#   "since_registration". Its schedule runs from the day it's registered on,
+#   and nothing redoes the backfill from 2023. orca has no "fill only the
+#   last N days" setting; to give a new dev stack some history, backfill a
+#   recent range by hand once, e.g.
+#       docker exec scheduler orca backfill gharchive 2026-10-09..2026-11-07
+#   (one partition a run, max_runs at a time).
+# - No `placement = "worker:..."`: every pipeline runs on the dev server
+#   itself, as in magmalake/mojo-census#86. A dev stack has no worker pool.
+#
+# Keep the two files' [pipelines.*] tables the same: CI checks that they
+# name the same pipelines, and that this one has no fills or placement.
+
+[defaults]
+max_runs = 1
+
+[pipelines.gharchive]
+# As orca.toml, without fills = "all", fill_order and fill_max_runs.
+env = { DISTA_WORKER_SLOTS = "2", GHARCHIVE_PARALLEL = "2", GHARCHIVE_EVENTS = "off" }
+
+[pipelines.gharchive_index]
+env = { DISTA_WORKER_SLOTS = "1" }
+
+[pipelines.mojo_repos]
+# Without the dev stack's GITHUB_TOKEN_FILE its runs fail on the secret.
+secrets = { GITHUB_TOKEN = "orca/github-token" }
+
+[pipelines.mojo_history]
+# On the server, not the bgent pool (orca.toml's placement), two dista
+# workers each like gharchive.
+env = { DISTA_WORKER_SLOTS = "2" }
+
+[pipelines.mojo_versions]
+env = { DISTA_WORKER_SLOTS = "2" }
+
+[pipelines.mojo_activity]
+env = { DISTA_WORKER_SLOTS = "2" }
+
+[pipelines.mojo_stats]
+secrets = { GITHUB_TOKEN = "orca/github-token" }
