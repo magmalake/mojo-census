@@ -12,7 +12,26 @@ from deps import RepoDep, resolve
 from historyrows import repo_dep_rows
 from days import day_text
 from jscan import micros_to_iso
-from lake import exists, load, try_load
+from lake import (
+    ACTIVITY,
+    ACTIVITY_REPOS,
+    CANDIDATES,
+    CHECKED,
+    COMMITS,
+    EVENTS,
+    GH_RELEASES,
+    MIGRATIONS,
+    RELEASES,
+    REPO_DEPS,
+    REPO_HOUR,
+    REPO_STATS,
+    REPO_VERSIONS,
+    REPOS,
+    TAGS,
+    exists,
+    load,
+    try_load,
+)
 from overview import ARCHIVE_START, Builder, tool_code
 from versions import compare_versions, usable
 
@@ -666,12 +685,20 @@ struct Sources(Copyable, Movable):
     """Of `days`, the ones from `ARCHIVE_START` to the `until` given
     `count_days`: what the home page's coverage counts against
     `archive_days_due`."""
+    var event_days: Int
+    """Of `days`, the ones gharchive.events' snapshots name: the days whose
+    raw events are kept (loaded with `GHARCHIVE_EVENTS` on)."""
+    var stored: List[Stored]
+    """What each table of the lake holds (`read_stored`), in `lake_tables`'
+    order; a table that doesn't exist or has no snapshot is left out."""
 
     def __init__(out self):
         self.ids = List[Int64]()
         self.as_of_ms = 0
         self.days = 0
         self.archive_days = 0
+        self.event_days = 0
+        self.stored = List[Stored]()
         self.first_day = String()
         self.last_day = String()
 
@@ -703,8 +730,12 @@ def read_sources() raises -> Sources:
 
 def read_days(mut src: Sources, until: String = String()) raises:
     """Count the GH Archive days loaded into `src`: the days the snapshots
-    of gharchive.events and gharchive.repo_hour name (`count_days`)."""
-    count_days(src, try_load("gharchive", "events"), try_load("gharchive", "repo_hour"), until)
+    of gharchive.events and gharchive.repo_hour name (`count_days`); and
+    read what every table holds (`read_stored`), those two loaded once."""
+    var events = try_load("gharchive", "events")
+    var repo_hour = try_load("gharchive", "repo_hour")
+    count_days(src, events, repo_hour, until)
+    read_stored(src, events^, repo_hour^)
 
 
 def count_days(
@@ -722,6 +753,7 @@ def count_days(
     var seen = Dict[String, Bool]()
     if events:
         _snapshot_days(events.value(), seen, src)
+    src.event_days = len(seen)
     if repo_hour:
         _snapshot_days(repo_hour.value(), seen, src)
     src.days = len(seen)
@@ -746,6 +778,73 @@ def _snapshot_days(t: Table, mut seen: Dict[String, Bool], mut src: Sources) rai
                     src.first_day = k
                 if k > src.last_day:
                     src.last_day = k
+
+
+def lake_tables() -> List[String]:
+    """Every table the pipelines write: GH Archive's (gharchive.*) and the
+    census's (mojo.*)."""
+    return [
+        EVENTS, CANDIDATES, REPO_HOUR, GH_RELEASES, REPOS, CHECKED, COMMITS, MIGRATIONS, TAGS,
+        REPO_VERSIONS, REPO_DEPS, REPO_STATS, ACTIVITY, ACTIVITY_REPOS, RELEASES,
+    ]
+
+
+@fieldwise_init
+struct Stored(Copyable, Movable):
+    """What a table holds at its current snapshot: the summary's
+    `total-records` and `total-files-size` (its data files, in bytes), which
+    every commit carries forward, so reading them is metadata only."""
+
+    var table: String
+    """`namespace.name`, or for a sum (`stored_total`) the prefix summed."""
+    var records: Int64
+    var bytes: Int64
+
+
+def stored_of(name: String, t: Table) raises -> Optional[Stored]:
+    """`t`'s `Stored` under `name`; none when it has no snapshot. A summary
+    without the totals counts as 0."""
+    if not t.metadata.has_current_snapshot:
+        return None
+    var s = t.metadata.current_snapshot().summary.copy()
+    return Stored(
+        name,
+        Int64(Int(s.get("total-records", String("0")))),
+        Int64(Int(s.get("total-files-size", String("0")))),
+    )
+
+
+def read_stored(
+    mut src: Sources, events: Optional[Table] = None, repo_hour: Optional[Table] = None
+) raises:
+    """Fill `src.stored` from every table of `lake_tables` (metadata only);
+    gharchive.events and gharchive.repo_hour are the ones given, if any,
+    since `read_days` has them loaded already."""
+    src.stored = List[Stored]()
+    for name in lake_tables():
+        var t: Optional[Table]
+        if name == EVENTS and events:
+            t = events.copy()
+        elif name == REPO_HOUR and repo_hour:
+            t = repo_hour.copy()
+        else:
+            var dot = name.find(".")
+            t = try_load(String(name[byte=:dot]), String(name[byte = dot + 1 :]))
+        if t:
+            var st = stored_of(name, t.value())
+            if st:
+                src.stored.append(st.value().copy())
+
+
+def stored_total(stored: List[Stored], prefix: String = String()) -> Stored:
+    """The sum of the tables whose name starts with `prefix` (`gharchive.`,
+    `mojo.`, or a whole table's name); of all of them for none."""
+    var out = Stored(prefix, 0, 0)
+    for ref st in stored:
+        if st.table.startswith(prefix):
+            out.records += st.records
+            out.bytes += st.bytes
+    return out^
 
 
 @fieldwise_init

@@ -6,7 +6,7 @@ sorting and filtering, and the charts' text.
 
 from std.testing import TestSuite, assert_equal, assert_true
 
-from charts import compact, donut, grid_line, line_chart, nice_ceil
+from charts import compact, compact_bytes, donut, grid_line, line_chart, nice_ceil
 from jscan import days_from_civil
 from listing import (
     NEW_30D,
@@ -337,6 +337,17 @@ def test_compact() raises:
     assert_equal(compact(15_000), "15k")
     assert_equal(compact(8_365_141), "8.3M")
     assert_equal(compact(2_000_000), "2M")
+    assert_equal(compact(999_999_999), "999M")
+    assert_equal(compact(4_123_456_789), "4.1B")
+    assert_equal(compact(-1500), "-1.5k")
+    assert_equal(compact_bytes(0), "0 B")
+    assert_equal(compact_bytes(999), "999 B")
+    assert_equal(compact_bytes(1000), "1 kB")
+    assert_equal(compact_bytes(1_234_567), "1.2 MB")
+    assert_equal(compact_bytes(41_700_000_000), "41 GB")
+    assert_equal(compact_bytes(1_100_000_000_000), "1.1 TB")
+    assert_equal(compact_bytes(12_000_000_000_000_000), "12 PB")
+    assert_equal(compact_bytes(1_200_000_000_000_000_000), "1200 PB")
     assert_equal(nice_ceil(1), 1)
     assert_equal(nice_ceil(7), 10)
     assert_equal(nice_ceil(130), 200)

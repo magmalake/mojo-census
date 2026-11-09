@@ -6,18 +6,35 @@ from flare.http import html_escape
 
 
 def compact(v: Int64) -> String:
-    """`950`, `1.2k`, `3M`: a number short enough for an axis."""
+    """`950`, `1.2k`, `3M`, `4.1B`: a number short enough for an axis."""
     if v < 0:
         return String("-", compact(-v))
     if v < 1000:
         return String(v)
     if v < 1_000_000:
         return _scaled(v, 1000, "k")
-    return _scaled(v, 1_000_000, "M")
+    if v < 1_000_000_000:
+        return _scaled(v, 1_000_000, "M")
+    return _scaled(v, 1_000_000_000, "B")
+
+
+def compact_bytes(v: Int64) -> String:
+    """`950 B`, `1.2 kB`, `3 MB`, `41 GB`, `1.1 TB`: a size in decimal
+    units, as `compact` writes a number."""
+    if v < 1000:
+        return String(max(v, 0), " B")
+    var units: List[String] = ["kB", "MB", "GB", "TB", "PB"]
+    var unit = Int64(1000)
+    var k = 0
+    while k + 1 < len(units) and v >= unit * 1000:
+        unit *= 1000
+        k += 1
+    return String(_scaled(v, unit, ""), " ", units[k])
 
 
 def _scaled(v: Int64, unit: Int64, suffix: String) -> String:
-    var tenths = v * 10 // unit
+    # `unit` is a multiple of ten: no `v * 10` to overflow near Int64's end.
+    var tenths = v // (unit // 10)
     if tenths >= 100 or tenths % 10 == 0:
         return String(tenths // 10, suffix)
     return String(tenths // 10, ".", tenths % 10, suffix)
