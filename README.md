@@ -382,11 +382,13 @@ The git-heavy pipelines, mojo_history, mojo_versions and mojo_activity, can run
 on a second machine as an orca remote worker, while the CAX21 keeps the
 scheduler, the UI, Postgres, the site, gharchive's fill, mojo_repos and
 mojo_stats. The worker holds no database credentials and needs only outbound
-HTTPS to the UI and to the bucket, no inbound ports. The census runs it on
+HTTPS to the UI and to the bucket, no inbound ports. The census ran it on
 "bgent", an Apple-silicon Mac running Docker: arm64 like the CAX21, so the same
 image. (orca's [docs/workers.md](https://github.com/magmalake/orca.mojo/blob/main/docs/workers.md)
 and the [Workers page](https://mlake.dev/s/orca/docs/workers) cover the
-general case; remote workers need orca 0.14.0.)
+general case; remote workers need orca 0.14.0.) It did that while gharchive's
+backfill had the CAX21's cores; since 2026-11-09 they run on the server
+again, and this section is how to move them back.
 
 On the server, a token for the pool, printed once (copy it to the worker
 machine as `worker-token`):
