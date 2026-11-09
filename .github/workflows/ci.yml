@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # dev: a branch that pins an orca.mojo commit to try on the dev stack
+    # (orca.mojo docs/hetzner.md, "A dev stack"); its image is pushed too.
+    branches: [main, dev]
     tags: ['*']
   pull_request:
 
@@ -18,6 +20,12 @@ jobs:
           pixi-version: v0.78.0
       - run: pixi run build
       - run: pixi run test
+      # orca.dev.toml (the dev stack's) has orca.toml's pipelines, without
+      # fills or a worker pool's placement.
+      - name: orca.dev.toml matches orca.toml
+        run: |
+          diff <(grep '^\[pipelines\.' orca.toml) <(grep '^\[pipelines\.' orca.dev.toml)
+          ! grep -nE '^[[:space:]]*(fills|fill_[a-z_]+|placement)[[:space:]]*=' orca.dev.toml
 
   # Build the image `orca aws push` builds, then run one hour of GH Archive
   # through the gharchive pipeline inside it: the Linux-only failures (a
@@ -54,6 +62,11 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
       - name: Size
         run: docker image ls gharchive-image --format '{{.Size}}'
+      # Both settings files as `orca register` checks them.
+      - name: orca config check, orca.toml and orca.dev.toml
+        run: |
+          docker run --rm gharchive-image config check /opt/orca/orca.toml
+          docker run --rm gharchive-image config check /opt/orca/orca.dev.toml
       - name: One hour of 2025-01-01 inside the image
         run: |
           docker run --rm --entrypoint sh \
@@ -70,8 +83,10 @@ jobs:
           docker logs console
           exit 1
       # What deploy/hetzner expects in orca.mojo: ghcr.io/magmalake/orca:<tag>.
-      # Pushed from the image tested above (native arm64), on main and on tags
-      # only; pull requests build and test but never push.
+      # Pushed from the image tested above (native arm64), on main, dev and
+      # tags only; pull requests build and test but never push. main's are
+      # <short sha> and latest, dev's <short sha> and dev (never latest), a
+      # tag's <short sha> and the tag without its v.
       - name: Log in to GHCR
         if: github.event_name == 'push'
         uses: docker/login-action@v3
@@ -85,6 +100,8 @@ jobs:
           tags="${GITHUB_SHA::7}"
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             tags="$tags ${GITHUB_REF_NAME#v}"
+          elif [ "$GITHUB_REF_NAME" = dev ]; then
+            tags="$tags dev"
           else
             tags="$tags latest"
           fi

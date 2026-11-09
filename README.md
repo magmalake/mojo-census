@@ -376,17 +376,34 @@ server registering is `docker exec scheduler orca register` (orca after
 0.10.0). To change a setting: edit `orca.toml`, merge, deploy the new image,
 register again. `mojo_retool` is a one-off and isn't in the file.
 
+### The dev stack
+
+orca.mojo's [dev stack](https://github.com/magmalake/orca.mojo/blob/main/docs/hetzner.md#a-dev-stack)
+is a second, smaller server for trying a release or a deploy-script change
+before production. Its scheduler reads `orca.dev.toml` (the image has it at
+`/opt/orca/orca.dev.toml`; the stack sets `ORCA_CONFIG` to it): the same
+pipelines, without fills or the bgent pool, so it never backfills from 2023.
+CI keeps the two files' pipelines the same.
+
+Its images come from the `dev` branch: a push to `dev` builds and pushes
+`ghcr.io/magmalake/orca:<short sha>` and `:dev` (never `:latest`). To try an
+orca.mojo commit, pin it on `dev` (`orca-mojo = { git = ..., rev = "<sha>" }`
+in `pixi.toml`, then `pixi lock`), push, and deploy the short sha to the dev
+stack.
+
 ### A second machine
 
 The git-heavy pipelines, mojo_history, mojo_versions and mojo_activity, can run
 on a second machine as an orca remote worker, while the CAX21 keeps the
 scheduler, the UI, Postgres, the site, gharchive's fill, mojo_repos and
 mojo_stats. The worker holds no database credentials and needs only outbound
-HTTPS to the UI and to the bucket, no inbound ports. The census runs it on
+HTTPS to the UI and to the bucket, no inbound ports. The census ran it on
 "bgent", an Apple-silicon Mac running Docker: arm64 like the CAX21, so the same
 image. (orca's [docs/workers.md](https://github.com/magmalake/orca.mojo/blob/main/docs/workers.md)
 and the [Workers page](https://mlake.dev/s/orca/docs/workers) cover the
-general case; remote workers need orca 0.14.0.)
+general case; remote workers need orca 0.14.0.) It did that while gharchive's
+backfill had the CAX21's cores; since 2026-11-09 they run on the server
+again, and this section is how to move them back.
 
 On the server, a token for the pool, printed once (copy it to the worker
 machine as `worker-token`):
