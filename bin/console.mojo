@@ -102,6 +102,7 @@ from overview import (
     bucket_color,
     bucket_of,
     family_of,
+    month_label,
     month_of_days,
     rising_score,
     tool_code,
@@ -413,6 +414,12 @@ def _age(micros: Int64, now_days: Int) -> String:
 
 def _now_days() raises -> Int:
     return Int(now() // 86400)
+
+
+def _this_month() raises -> String:
+    """`2026-11`: the month in progress, which the per-month charts leave out.
+    Its few days so far would read as a drop at the end of every curve."""
+    return month_label(month_of_days(_now_days()))
 
 
 def _or_dash(s: String) -> String:
@@ -1269,6 +1276,11 @@ def overview(req: Request, c: Cache) raises -> Response:
             var commits_names: List[String] = ["Commits"]
             var commits_series = List[List[Int64]]()
             commits_series.append(ov.commits_series.copy())
+            # Commits per month ends with the last full month.
+            var cm = m.copy()
+            if len(cm) > 2 and cm[len(cm) - 1] == _this_month():
+                _ = cm.pop()
+                _ = commits_series[0].pop()
             h.write(
                 "<h2>Growth",
                 _help(
@@ -1286,8 +1298,8 @@ def overview(req: Request, c: Cache) raises -> Response:
                     "A repo counts from its first Mojo commit.", True,
                 ),
                 _curve_card(
-                    "Commits per month", m, commits_names, commits_series, single_color, False,
-                    "Commits in the repos' first-parent histories.", True,
+                    "Commits per month", cm, commits_names, commits_series, single_color, False,
+                    "Commits in the repos' first-parent histories, to the last full month.", True,
                 ),
             )
             # Tooling share, in percent of the repos that exist that month.
@@ -1666,9 +1678,17 @@ def _next_month(m: String) raises -> String:
     return String(y, "-", "0" if mo < 9 else "", mo + 1)
 
 
-def _versions_chart(rows: List[VersionMonth]) raises -> String:
+def _versions_chart(all_rows: List[VersionMonth]) raises -> String:
     """Repos migrating each month as one line per Mojo version bucket
-    (`pre-1.0`, then each 1.x minor), as inline SVG with a legend."""
+    (`pre-1.0`, then each 1.x minor), as inline SVG with a legend. The
+    month in progress is left out while there are earlier ones."""
+    var this_month = _this_month()
+    var rows = List[VersionMonth]()
+    for ref r in all_rows:
+        if r.month != this_month:
+            rows.append(r.copy())
+    if len(rows) == 0:
+        rows = all_rows.copy()
     var names = List[String]()
     var oldest = List[String]()
     for ref r in rows:
@@ -1702,7 +1722,10 @@ def _versions_chart(rows: List[VersionMonth]) raises -> String:
         String(
             "Repos migrating to each Mojo version per month, ", months[0], " to ", last,
         ),
-        String("Repos per month; a repo that moved twice in a month counts for each version."),
+        String(
+            "Repos per month, to the last full month; a repo that moved twice in a month"
+            " counts for each version.",
+        ),
         colors,
     )
 
@@ -1913,8 +1936,12 @@ def _chart(points: List[Point]) -> String:
 comptime RELEASES_SHOWN = 30
 
 
-def _stars_chart(repo_months: List[MonthActivity], loaded: List[String]) raises -> String:
-    """Stars and forks per month from GH Archive, over the months loaded."""
+def _stars_chart(repo_months: List[MonthActivity], all_loaded: List[String]) raises -> String:
+    """Stars and forks per month from GH Archive, over the months loaded but
+    the one in progress (unless it's the only one)."""
+    var loaded = all_loaded.copy()
+    if len(loaded) > 1 and loaded[len(loaded) - 1] == _this_month():
+        _ = loaded.pop()
     var counts = Dict[String, Int]()
     var top = 1
     var total = Int64(0)
@@ -1930,7 +1957,7 @@ def _stars_chart(repo_months: List[MonthActivity], loaded: List[String]) raises 
         String("Stars (WatchEvents) and forks per month in GH Archive, ", loaded[0], " to ", loaded[len(loaded) - 1]),
         String(
             _n(total), " stars over the months of GH Archive loaded so far (",
-            len(loaded), "; months in between aren't loaded yet), counted from its events.",
+            len(all_loaded), "; months in between aren't loaded yet), counted from its events.",
         ),
     )
 
