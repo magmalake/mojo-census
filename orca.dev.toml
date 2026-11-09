@@ -15,8 +15,12 @@
 # - No `placement = "worker:..."`: every pipeline runs on the dev server
 #   itself, as in magmalake/mojo-census#86. A dev stack has no worker pool.
 #
-# Keep the two files' [pipelines.*] tables the same: CI checks that they
-# name the same pipelines, and that this one has no fills or placement.
+# - ballast (#97), only here: runs with known peaks, to check the learned
+#   requests (orca #269) against.
+#
+# Keep the two files' [pipelines.*] tables the same apart from ballast: CI
+# checks that they name the same pipelines, and that this one has no fills or
+# placement.
 
 [defaults]
 max_runs = 1
@@ -59,3 +63,10 @@ env = { DISTA_WORKER_SLOTS = "2" }
 # Learned (orca #269).
 memory_gb = "auto"
 secrets = { GITHUB_TOKEN = "orca/github-token" }
+
+[pipelines.ballast]
+# Learned (orca #269), the subject of the test: pipelines/ballast.mojo has
+# each day's peaks. Run by hand, e.g.
+#   docker exec scheduler orca backfill ballast 2011-01-01..2011-01-22
+memory_gb = "auto"
+cpus = "auto"
