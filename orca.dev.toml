@@ -22,6 +22,10 @@
 max_runs = 1
 
 [pipelines.gharchive]
+# Learned from the last runs' peaks (orca #269), at most 6 GB: two fill runs
+# fit the CAX21's ~6.5 GB to grant. No cpus: two learned 2-CPU requests
+# against 3 grantable cores would hold the second fill run.
+memory_gb = "auto..6"
 # As orca.toml, without fills = "all", fill_order and fill_max_runs.
 env = { DISTA_WORKER_SLOTS = "2", GHARCHIVE_PARALLEL = "2", GHARCHIVE_EVENTS = "off" }
 
@@ -29,19 +33,29 @@ env = { DISTA_WORKER_SLOTS = "2", GHARCHIVE_PARALLEL = "2", GHARCHIVE_EVENTS = "
 env = { DISTA_WORKER_SLOTS = "1" }
 
 [pipelines.mojo_repos]
+# Learned (orca #269), so every pipeline on the host is counted.
+memory_gb = "auto"
 # Without the dev stack's GITHUB_TOKEN_FILE its runs fail on the secret.
 secrets = { GITHUB_TOKEN = "orca/github-token" }
 
 [pipelines.mojo_history]
+# Learned (orca #269), at most 4 GB, so its clones count against gharchive's grants.
+memory_gb = "auto..4"
 # On the server, not the bgent pool (orca.toml's placement), two dista
 # workers each like gharchive.
 env = { DISTA_WORKER_SLOTS = "2" }
 
 [pipelines.mojo_versions]
+# Learned (orca #269), at most 4 GB.
+memory_gb = "auto..4"
 env = { DISTA_WORKER_SLOTS = "2" }
 
 [pipelines.mojo_activity]
+# Learned (orca #269), at most 4 GB.
+memory_gb = "auto..4"
 env = { DISTA_WORKER_SLOTS = "2" }
 
 [pipelines.mojo_stats]
+# Learned (orca #269).
+memory_gb = "auto"
 secrets = { GITHUB_TOKEN = "orca/github-token" }

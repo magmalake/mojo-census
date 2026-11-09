@@ -12,6 +12,10 @@
 max_runs = 1
 
 [pipelines.gharchive]
+# Learned from the last runs' peaks (orca #269), at most 6 GB: two fill runs
+# fit the CAX21's ~6.5 GB to grant. No cpus: two learned 2-CPU requests
+# against 3 grantable cores would hold the second fill run.
+memory_gb = "auto..6"
 # Fill the whole range (from the first partition to yesterday) by itself,
 # oldest day first, two fill runs at a time on top of max_runs: while one
 # run does its day's serial merge and commit, the other keeps downloading.
@@ -63,10 +67,14 @@ env = { DISTA_WORKER_SLOTS = "2", GHARCHIVE_PARALLEL = "2", GHARCHIVE_EVENTS = "
 env = { DISTA_WORKER_SLOTS = "1" }
 
 [pipelines.mojo_repos]
+# Learned (orca #269), so every pipeline on the host is counted.
+memory_gb = "auto"
 # With a token mojo_repos checks 1000 candidates a run, 25 without.
 secrets = { GITHUB_TOKEN = "orca/github-token" }
 
 [pipelines.mojo_history]
+# Learned (orca #269), at most 4 GB, so its clones count against gharchive's grants.
+memory_gb = "auto..4"
 # Clones (here and in mojo_versions): GIT_TIMEOUT_SECONDS (600) kills one
 # that runs longer, GIT_RETRIES (3) more tries with backoff, and git aborts a
 # transfer under GIT_LOW_SPEED_LIMIT (1000) bytes a second for
@@ -80,14 +88,20 @@ secrets = { GITHUB_TOKEN = "orca/github-token" }
 env = { DISTA_WORKER_SLOTS = "2" }
 
 [pipelines.mojo_versions]
+# Learned (orca #269), at most 4 GB.
+memory_gb = "auto..4"
 # Blobless clones of the repositories whose version is unknown, one dista
 # task each; no GitHub API, so no token.
 env = { DISTA_WORKER_SLOTS = "2" }
 
 [pipelines.mojo_activity]
+# Learned (orca #269), at most 4 GB.
+memory_gb = "auto..4"
 env = { DISTA_WORKER_SLOTS = "2" }
 
 # Daily at 06:00 UTC; one GET /repos/{owner}/{repo} per repository, which
 # unauthenticated is 60 an hour.
 [pipelines.mojo_stats]
+# Learned (orca #269).
+memory_gb = "auto"
 secrets = { GITHUB_TOKEN = "orca/github-token" }
