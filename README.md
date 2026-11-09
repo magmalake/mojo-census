@@ -385,11 +385,14 @@ before production. Its scheduler reads `orca.dev.toml` (the image has it at
 pipelines, without fills or the bgent pool, so it never backfills from 2023.
 CI keeps the two files' pipelines the same.
 
-Its images come from the `dev` branch: a push to `dev` builds and pushes
-`ghcr.io/magmalake/orca:<short sha>` and `:dev` (never `:latest`). To try an
-orca.mojo commit, pin it on `dev` (`orca-mojo = { git = ..., rev = "<sha>" }`
-in `pixi.toml`, then `pixi lock`), push, and deploy the short sha to the dev
-stack.
+Both stacks' images come from the `dev` branch: a push to `dev` builds and
+pushes `ghcr.io/magmalake/orca:<short sha>` and `:dev`. main builds no image
+(`:latest` stays at main's last one, `c1f9fd7`). To release, bring `dev` up
+to main (`git push origin origin/main:dev`, or a merge of main into `dev` when
+it has commits of its own), deploy the short sha to the dev stack, then the
+same tag to production. To try an orca.mojo commit, pin it on `dev`
+(`orca-mojo = { git = ..., rev = "<sha>" }` in `pixi.toml`, then `pixi
+lock`) and push.
 
 ### A second machine
 

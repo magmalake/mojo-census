@@ -2,8 +2,8 @@ name: CI
 
 on:
   push:
-    # dev: a branch that pins an orca.mojo commit to try on the dev stack
-    # (orca.mojo docs/hetzner.md, "A dev stack"); its image is pushed too.
+    # dev: the branch the deployed images come from (orca.mojo
+    # docs/hetzner.md, "A dev stack"). main runs only the tests.
     branches: [main, dev]
     tags: ['*']
   pull_request:
@@ -30,8 +30,11 @@ jobs:
   # Build the image `orca aws push` builds, then run one hour of GH Archive
   # through the gharchive pipeline inside it: the Linux-only failures (a
   # library that won't link, a CA bundle in the wrong place) show up here
-  # rather than on AWS.
+  # rather than on AWS. Not on main: what was merged there is built when it
+  # reaches dev, the branch both stacks deploy from (pull requests still
+  # build it, without pushing).
   image:
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -83,10 +86,10 @@ jobs:
           docker logs console
           exit 1
       # What deploy/hetzner expects in orca.mojo: ghcr.io/magmalake/orca:<tag>.
-      # Pushed from the image tested above (native arm64), on main, dev and
-      # tags only; pull requests build and test but never push. main's are
-      # <short sha> and latest, dev's <short sha> and dev (never latest), a
-      # tag's <short sha> and the tag without its v.
+      # Pushed from the image tested above (native arm64), on dev and tags
+      # only; pull requests build and test but never push. dev's are
+      # <short sha> and dev, a tag's <short sha> and the tag without its v.
+      # Nothing pushes latest any more: it stays at main's last image.
       - name: Log in to GHCR
         if: github.event_name == 'push'
         uses: docker/login-action@v3
@@ -100,10 +103,8 @@ jobs:
           tags="${GITHUB_SHA::7}"
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             tags="$tags ${GITHUB_REF_NAME#v}"
-          elif [ "$GITHUB_REF_NAME" = dev ]; then
-            tags="$tags dev"
           else
-            tags="$tags latest"
+            tags="$tags dev"
           fi
           for t in $tags; do
             docker tag gharchive-image "$GHCR_IMAGE:$t"
