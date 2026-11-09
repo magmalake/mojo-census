@@ -1,0 +1,312 @@
+"""The console's `Cache`: the repos, the overview and every repo page's
+lists as of one build, which the refresher builds from the lake and the
+pages only read; and how often it looks (`refresh_secs`)."""
+
+from std.os import getenv
+
+from deps import Depended, most_depended
+from listing import NEW_30D, NEW_LAST_MONTH, NEW_MONTH
+from model import (
+    Gain,
+    Library,
+    Migration,
+    MonthActivity,
+    Point,
+    Release,
+    Sources,
+    VersionMonth,
+    activity_all,
+    activity_months,
+    histories,
+    libraries,
+    migrations,
+    gains_since,
+    releases_all,
+    versions_of,
+)
+from overview import (
+    ACTIVE_DAYS,
+    Builder,
+    Overview,
+    bucket_of,
+    family_of,
+    month_of_days,
+    rising_score,
+    tool_code,
+    top_gains,
+    unversioned,
+)
+
+from console_migrations import _migrations_body
+
+
+comptime REFRESH_SECS = 1800
+"""How often the tables' current snapshots are looked at, unless
+`CONSOLE_REFRESH_SECONDS` says otherwise."""
+comptime RETRY_SECS = 30
+"""How soon to look again after a failed build or while nothing is built."""
+comptime RISING_SHOWN = 10
+comptime ACTIVE_SHOWN = 10
+comptime DEPENDED_SHOWN = 10
+
+
+struct RepoData(Copyable, Movable):
+    """What a repo's page lists, read with every other repo's when the cache
+    is built."""
+
+    var pts: List[Point]
+    """Its commits, oldest first."""
+    var ms: List[Migration]
+    var rels: List[Release]
+    var acts: List[MonthActivity]
+
+    def __init__(out self):
+        self.pts = List[Point]()
+        self.ms = List[Migration]()
+        self.rels = List[Release]()
+        self.acts = List[MonthActivity]()
+
+
+struct Cache(Movable):
+    """The repos and the overview, as of one build. A `Cache` is never changed
+    once it is in the `Swap`: the refresher thread builds the next one beside
+    it, so any number of requests can read it without a lock."""
+
+    var ready: Bool
+    var libs: List[Library]
+    """Biggest (lines of Mojo now) first."""
+    var lines: List[Int64]
+    var files: List[Int64]
+    var stars: List[Int64]
+    var forks: List[Int64]
+    var used_by: List[Int64]
+    """How many census repos depend on each repo."""
+    var buckets: List[String]
+    """`bucket_of` each repo's current Mojo version."""
+    var families: List[String]
+    """`family_of` each repo's current Mojo version (old `?version=` links)."""
+    var est_buckets: List[String]
+    """`buckets` with the estimate by date for a repo with no detected version."""
+    var est_families: List[String]
+    var news: List[Int]
+    """Bits of `listing.new_bit` for when each repo's first Mojo commit was."""
+    var active: List[Bool]
+    var ov: Overview
+    var details: Dict[String, RepoData]
+    """Per repo: the lists its page shows, all read at once at each build."""
+    var loaded: List[String]
+    """The months of GH Archive in mojo.activity."""
+    var version_rows: List[VersionMonth]
+    var migrations_body: String
+    """The Migrations page's HTML, rendered at each build."""
+    var commits30: List[Int64]
+    """Commits in the last 30 days, per repo."""
+    var active_repos: List[String]
+    """The `ACTIVE_SHOWN` repos with the most commits in the last 30 days."""
+    var active_commits: List[Int64]
+    var active_lines: List[Int64]
+    """Their net change in lines of Mojo over the 30 days."""
+    var rising: List[String]
+    """The `RISING_SHOWN` repos with the highest `rising_score`."""
+    var rising_gain: List[Int64]
+    """Stars gained in the last 30 days."""
+    var rising_forks: List[Int64]
+    """Forks gained in the last 30 days."""
+    var rising_used_by: List[Int64]
+    var rising_score: List[Int64]
+    var rising_stars: List[Int64]
+    """Stars now."""
+    var depended: List[Depended]
+    """The `DEPENDED_SHOWN` rows of Most depended on (`most_depended`):
+    the repos the most census repos depend on, an owner's collapsed into
+    `owner/*` when two or more would be shown."""
+    var sources: Sources
+    var built_day: Int
+    var built_at: Int64
+    """When it was built, in seconds since the epoch."""
+    var repo_rows: Int
+    """Rows of mojo.repos, duplicates included (for the checks)."""
+    var history: List[Int64]
+    """Per repo, the first-parent commits mojo_history recorded (its last
+    seq + 1), for the checks."""
+
+    def __init__(out self):
+        self.ready = False
+        self.libs = List[Library]()
+        self.lines = List[Int64]()
+        self.files = List[Int64]()
+        self.stars = List[Int64]()
+        self.forks = List[Int64]()
+        self.used_by = List[Int64]()
+        self.buckets = List[String]()
+        self.families = List[String]()
+        self.est_buckets = List[String]()
+        self.est_families = List[String]()
+        self.news = List[Int]()
+        self.active = List[Bool]()
+        self.ov = Overview()
+        self.details = Dict[String, RepoData]()
+        self.loaded = List[String]()
+        self.version_rows = List[VersionMonth]()
+        self.migrations_body = String()
+        self.commits30 = List[Int64]()
+        self.active_repos = List[String]()
+        self.active_commits = List[Int64]()
+        self.active_lines = List[Int64]()
+        self.rising = List[String]()
+        self.rising_gain = List[Int64]()
+        self.rising_forks = List[Int64]()
+        self.rising_used_by = List[Int64]()
+        self.rising_score = List[Int64]()
+        self.rising_stars = List[Int64]()
+        self.depended = List[Depended]()
+        self.sources = Sources()
+        self.built_day = 0
+        self.built_at = 0
+        self.repo_rows = 0
+        self.history = List[Int64]()
+
+    def _build(mut self, today: Int, var src: Sources) raises:
+        var b = Builder(today)
+        var libs = libraries(b)
+        var ov = b.finish(len(libs))
+        # Per repo in `libs`' order (biggest first), joined by name: `b.accs`
+        # is in mojo.repos' order, so its index is no repo's index in `libs`.
+        var names = List[String]()
+        for ref l in libs:
+            names.append(l.repo)
+        var recent = b.recent(names)
+        var commits30 = recent.commits30.copy()
+        var lines_delta = recent.lines_delta.copy()
+        var gains = gains_since(today - 30)
+        var cutoff = Int64(today - ACTIVE_DAYS) * 86_400_000_000
+        var lines = List[Int64]()
+        var files = List[Int64]()
+        var stars = List[Int64]()
+        var forks = List[Int64]()
+        var used_by = List[Int64]()
+        var users = List[List[String]]()
+        var buckets = List[String]()
+        var families = List[String]()
+        var est_buckets = List[String]()
+        var est_families = List[String]()
+        var news = List[Int]()
+        var now_month = month_of_days(today)
+        var cut30 = Int64(today - 30) * 86_400_000_000
+        var active = List[Bool]()
+        var score_list = List[Int64]()
+        var history = List[Int64]()
+        for ref l in libs:
+            var id = b.id_of(l.repo)
+            history.append(b.accs[id].last_seq + 1 if id >= 0 else 0)
+            lines.append(l.mojo_lines)
+            files.append(l.mojo_files)
+            stars.append(l.stars)
+            forks.append(l.forks)
+            used_by.append(Int64(len(l.used_by)))
+            users.append(l.used_by.copy())
+            var why = unversioned(l.commits, tool_code(l.tooling))
+            buckets.append(bucket_of(l.mojo_version, why))
+            families.append(family_of(l.mojo_version, why))
+            var ev = l.mojo_version if l.mojo_version.byte_length() > 0 else l.version_estimate
+            est_buckets.append(bucket_of(ev, why))
+            est_families.append(family_of(ev, why))
+            # As the Overview counts new repos: by the first Mojo commit.
+            var bits = 0
+            if l.commits > 0:
+                var fm = month_of_days(Int(l.first_commit // 86_400_000_000))
+                if fm == now_month:
+                    bits |= NEW_MONTH
+                elif fm == now_month - 1:
+                    bits |= NEW_LAST_MONTH
+                if l.first_commit > cut30:
+                    bits |= NEW_30D
+            news.append(bits)
+            active.append(l.commits > 0 and l.last_commit >= cutoff)
+            var g = gains.get(l.repo, Gain(0, 0))
+            score_list.append(rising_score(g.stars, g.forks, Int64(len(l.used_by))))
+        self.rising = List[String]()
+        self.rising_gain = List[Int64]()
+        self.rising_forks = List[Int64]()
+        self.rising_used_by = List[Int64]()
+        self.rising_score = List[Int64]()
+        self.rising_stars = List[Int64]()
+        for i in top_gains(score_list, RISING_SHOWN):
+            var g = gains.get(libs[i].repo, Gain(0, 0))
+            self.rising.append(libs[i].repo)
+            self.rising_gain.append(g.stars)
+            self.rising_forks.append(g.forks)
+            self.rising_used_by.append(Int64(len(libs[i].used_by)))
+            self.rising_score.append(score_list[i])
+            self.rising_stars.append(libs[i].stars)
+        self.depended = most_depended(names, users, stars, forks, DEPENDED_SHOWN)
+        var details = Dict[String, RepoData]()
+        for e in histories().items():
+            details[e.key] = RepoData()
+            details[e.key].pts = e.value.copy()
+        var all_ms = migrations()
+        var rows = versions_of(all_ms)
+        for ref m in all_ms:
+            if m.repo not in details:
+                details[m.repo] = RepoData()
+            details[m.repo].ms.append(m.copy())
+        for e in releases_all().items():
+            if e.key not in details:
+                details[e.key] = RepoData()
+            details[e.key].rels = e.value.copy()
+        for e in activity_all().items():
+            if e.key not in details:
+                details[e.key] = RepoData()
+            details[e.key].acts = e.value.copy()
+        self.loaded = activity_months()
+        self.migrations_body = _migrations_body(rows) if len(rows) > 0 else String()
+        self.version_rows = rows^
+        self.details = details^
+        self.commits30 = commits30.copy()
+        self.active_repos = List[String]()
+        self.active_commits = List[Int64]()
+        self.active_lines = List[Int64]()
+        for i in top_gains(commits30, ACTIVE_SHOWN):
+            self.active_repos.append(libs[i].repo)
+            self.active_commits.append(commits30[i])
+            self.active_lines.append(lines_delta[i])
+        self.ov = ov^
+        self.lines = lines^
+        self.files = files^
+        self.stars = stars^
+        self.forks = forks^
+        self.used_by = used_by^
+        self.buckets = buckets^
+        self.families = families^
+        self.est_buckets = est_buckets^
+        self.est_families = est_families^
+        self.news = news^
+        self.active = active^
+        self.libs = libs^
+        self.history = history^
+        self.repo_rows = b.repo_rows
+        self.sources = src^
+        self.built_day = today
+        self.ready = True
+
+    def data(self, repo: String) -> RepoData:
+        return self.details.get(repo, RepoData())
+
+    def find(self, repo: String) -> Optional[Library]:
+        for ref l in self.libs:
+            if l.repo == repo:
+                return l.copy()
+        return None
+
+
+def refresh_secs() -> Int:
+    """`CONSOLE_REFRESH_SECONDS`, else `REFRESH_SECS`."""
+    var v = getenv("CONSOLE_REFRESH_SECONDS")
+    if v.byte_length() > 0:
+        try:
+            var n = Int(v)
+            if n > 0:
+                return n
+        except:
+            pass
+    return REFRESH_SECS
