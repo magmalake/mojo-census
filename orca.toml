@@ -20,6 +20,12 @@ max_runs = 1
 fills = "all"
 fill_order = "oldest"
 fill_max_runs = 2
+# GH Archive publishes each hour's file some minutes after the hour, so at
+# 00:00 UTC the day that just ended isn't all there: the fill's load_day
+# attempts failed until the last hour appeared (~00:09), and the failures
+# tripped the watchdog, which paused gharchive (run 5172, 2026-11-09). With
+# the lag a day fills from 02:00 UTC (orca docs/orca-toml.md#the-lag).
+fill_lag = "2h"
 # DISTA_WORKER_SLOTS: dista workers in one process. GHARCHIVE_PARALLEL: hours
 # in flight at once; its default of 16 is sized for four AWS instances. Keep
 # the two equal. Before #37 an hour in flight took 2 GB or more: on the CAX21
