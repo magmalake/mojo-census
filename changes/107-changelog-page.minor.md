@@ -1,0 +1,1 @@
+- **A Changelog tab**: How it works has a third tab, `/how/changelog`, with CHANGELOG.md, each entry linking its pull request; the image carries the file at `/opt/orca/CHANGELOG.md` (`CENSUS_CHANGELOG`). (#107)

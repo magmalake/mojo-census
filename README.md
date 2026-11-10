@@ -31,6 +31,10 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
                             mojo.repo_stats ◀──mojo_stats──────────────────────────┘
                               (by month)       (daily 06:00 UTC, GitHub API)
                                    │
+                                   └──mojo_embed──▶ mojo.repo_embeddings
+                                      (daily 07:00 UTC, reads mojo.repos too;
+                                       bge-small on the CPU, changed text only)
+                                   │
                                    ▼
                           bin/console (flare)
 ```
@@ -153,6 +157,19 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   gone, blocked or renamed is a row with that `state`; a rate limit is
   waited out by `Retry-After` / `X-RateLimit-Reset`. A rerun of a day
   replaces that day's rows.
+- **`pipelines/mojo_embed.mojo`**: daily at 07:00 UTC (daily partitions
+  from 2026-11-10), a sentence embedding of each repository's name,
+  description and topics into `mojo.repo_embeddings` (384 float32 values,
+  L2-normalized, as `binary`), with
+  [encoder.mojo](https://github.com/magmalake/encoder.mojo) running
+  `BAAI/bge-small-en-v1.5` in the step's process (no Python, no dista). The
+  text is `mojo.repos`'s, overridden by the latest `ok` row of
+  `mojo.repo_stats`. Only the repositories whose text or model changed are
+  embedded again (`input_hash`), so most runs embed a few or none and
+  commit nothing. All 1,216 repositories take about 2 s on an M4 and about
+  7 s on four arm64 cores. The model isn't in the image: a run downloads
+  what `MOJO_EMBED_MODEL` lacks (133 MB) from Hugging Face, pinned to a
+  revision, and checks the weights' hash (`model_rev`).
 - **`bin/console.mojo`**: an overview (`/`: repos, commits and lines of
   Mojo with their change over 30 days, repos per Mojo version family,
   monthly curves from `mojo.commits`, adoption of the newest version,
@@ -246,6 +263,7 @@ MOJO_HISTORY_MAX_KB=100000 pixi run ./build/mojo_history run --partitions @all
 pixi run ./build/mojo_activity run --partitions 2024-06-12
 pixi run ./build/mojo_versions run --partitions @all
 pixi run ./build/mojo_stats run --partitions $(date +%F)   # GITHUB_TOKEN helps
+pixi run ./build/mojo_embed run --partitions $(date +%F)   # downloads the model once
 PORT=8080 pixi run ./build/console      # http://127.0.0.1:8080
 ```
 

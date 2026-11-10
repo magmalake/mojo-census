@@ -8,7 +8,7 @@ Pages: `/` the overview (cards, repos per Mojo version, growth curves),
 `/repos` the repos by size and age (`?sort=lines|files|stars|forks|used_by&dir=asc|desc`,
 `?version=1.x`, `?active=1y`), `/search?q=` finds repos by name, GitHub topic
 or description, `/migrations` the migrations to each Mojo version over time,
-`/how` and `/how/optimizations` how the census is built,
+`/how`, `/how/optimizations` and `/how/changelog` how the census is built,
 `/repos/<owner>/<name>` one repo. The data pages have JSON at `/api/...`.
 
 The repos and the overview are computed and kept (`Cache`), and a background
@@ -52,7 +52,7 @@ from swap import Swap, check_due, needs_build
 
 from console_api import index_json, overview_json, repo_json, search_json, versions_json
 from console_cache import RETRY_SECS, Cache, refresh_secs
-from console_how import how, optimizations
+from console_how import changelog, how, optimizations
 from console_layout import EDGE_CACHE, _empty, _page
 from console_list import repos_page, search
 from console_migrations import migrations_page
@@ -272,6 +272,7 @@ def main() raises:
     r.get("/versions", _moved_to_migrations)
     r.get("/how", how)
     r.get("/how/optimizations", optimizations)
+    r.get("/how/changelog", changelog)
     r.get("/search", Site(2, cache, checks))
     r.get("/repos/:owner/:name", Site(3, cache, checks))
     r.get("/api/overview", Site(4, cache, checks))
