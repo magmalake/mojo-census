@@ -12,7 +12,8 @@ on:
 jobs:
   # Build every program and run the tests, as on a laptop: on arm64 (Hetzner's
   # CAX) and amd64 (x86 servers and clouds).
-  test:
+  test-arch:
+    name: test (${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
@@ -43,7 +44,8 @@ jobs:
   # One per architecture, each on its own runner (no emulation), built for a
   # baseline CPU (Dockerfile.orca, MOJO_TARGET_CPU) and pushed as
   # <tag>-<arch>; `manifest` joins them under the tags deploys use.
-  image:
+  image-arch:
+    name: image (${{ matrix.arch }}, ${{ matrix.runner }}, ${{ matrix.cpu }})
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     strategy:
       fail-fast: false
@@ -132,10 +134,25 @@ jobs:
             docker push "$GHCR_IMAGE:$t-${{ matrix.arch }}"
           done
 
+  # `test` and `image`, the checks main's ruleset requires: each passes once
+  # every architecture's job has (skipped counts, as on a push to main).
+  test:
+    if: always()
+    needs: test-arch
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "${{ needs.test-arch.result }}" = success ]'
+  image:
+    if: always()
+    needs: image-arch
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'case "${{ needs.image-arch.result }}" in success | skipped) ;; *) exit 1 ;; esac'
+
   # Each tag as one image for both architectures, so a server pulls its own.
   manifest:
     if: github.event_name == 'push' && github.ref != 'refs/heads/main'
-    needs: image
+    needs: image-arch
     runs-on: ubuntu-latest
     permissions:
       contents: read
