@@ -1,1 +1,0 @@
-- **Repo categories**: each repo gets an approximate category (ML, bindings, libraries, learning, games, web, other) from its description and embedding, as a filter on /repos, a tile on its page and a table on the overview. (#101, #113)

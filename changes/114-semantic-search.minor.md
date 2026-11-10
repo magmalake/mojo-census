@@ -1,1 +1,0 @@
-- **Search by meaning**: /search and /api/search list repos related to the query by embedding after the text matches; the console downloads the model (133 MB) on its first start and needs about 500 MB more memory; `CONSOLE_SEMANTIC=0` turns it off. (#101, #114)
