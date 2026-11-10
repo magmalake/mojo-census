@@ -132,11 +132,15 @@ COPY --from=build /src/project/.pixi/envs/default/ssl /opt/orca/ssl
 # The census's settings, and what `orca register` (no arguments) reads: every
 # pipeline in orca.toml, from ORCA_PIPELINES_DIR, with the commit and source
 # these were built from. orca.dev.toml is the dev stack's (no fills, no
-# worker pool), which it reads with ORCA_CONFIG=/opt/orca/orca.dev.toml.
-COPY --from=build /src/project/orca.toml /src/project/orca.dev.toml /opt/orca/
+# worker pool), which it reads with ORCA_CONFIG=/opt/orca/orca.dev.toml;
+# orca.lab.toml the lab stack's (ballast only).
+COPY --from=build /src/project/orca.toml /src/project/orca.dev.toml /src/project/orca.lab.toml /opt/orca/
+# The console's Changelog tab (/how/changelog) reads it.
+COPY --from=build /src/project/CHANGELOG.md /opt/orca/
 ARG ORCA_SOURCE=""
 ARG ORCA_COMMIT=""
 ENV ORCA_CONFIG=/opt/orca/orca.toml ORCA_PIPELINES_DIR=/opt/orca/pipelines \
+    CENSUS_CHANGELOG=/opt/orca/CHANGELOG.md \
     ORCA_SOURCE=${ORCA_SOURCE} ORCA_COMMIT=${ORCA_COMMIT}
 ENV CONDA_PREFIX=/opt/orca LD_LIBRARY_PATH=/opt/orca/lib PATH=/opt/orca/bin:/opt/orca/pipelines:/usr/bin:/bin \
     LLVM_SYMBOLIZER_PATH=/opt/orca/libexec/llvm-symbolizer GIT_EXEC_PATH=/opt/orca/libexec/git
