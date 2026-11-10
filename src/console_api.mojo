@@ -13,6 +13,7 @@ from search import url_decode, version_bucket, version_family
 from console_cache import Cache
 from console_list import _matches
 from similar import Neighbor
+from categories import CATEGORIES_VERSION
 
 
 def _q(s: String) -> String:
@@ -155,7 +156,7 @@ def search_json(req: Request, c: Cache) raises -> Response:
                 if not first:
                     out += ","
                 first = False
-                out += _lib_json(c.libs[i])
+                out += _lib_json(c.libs[i], c.categories[i] if i < len(c.categories) else String())
         out += "]"
         return ok_json(out)
     except e:
@@ -182,7 +183,7 @@ def _source_name(source: String) -> String:
     return source
 
 
-def _lib_json(l: Library) -> String:
+def _lib_json(l: Library, category: String = String()) -> String:
     return String(
         '{"repo":', _q(l.repo), ',"description":', _q(l.description),
         ',"created_at":', _q(micros_to_iso(l.created_at) if l.created_at else ""),
@@ -202,18 +203,19 @@ def _lib_json(l: Library) -> String:
         ',"state":', _q(l.state), ',"renamed_to":', _q(l.renamed_to),
         ',"declared_deps":', "null" if l.declared_deps < 0 else String(l.declared_deps),
         ',"depends_on":', _strs_json(l.depends_on), ',"used_by":', _strs_json(l.used_by),
-        ',"dependencies":', _strs_json(l.declared), "}",
+        ',"dependencies":', _strs_json(l.declared),
+        ',"category":', _q(category) if category.byte_length() > 0 else "null", "}",
     )
 
 
 def index_json(req: Request, c: Cache) raises -> Response:
     var out = String("[")
     var first = True
-    for ref l in c.libs:
+    for i in range(len(c.libs)):
         if not first:
             out += ","
         first = False
-        out += _lib_json(l)
+        out += _lib_json(c.libs[i], c.categories[i] if i < len(c.categories) else String())
     out += "]"
     return ok_json(out)
 
@@ -241,7 +243,7 @@ def repo_json(req: Request, c: Cache) raises -> Response:
         if not found:
             return not_found(req.url)
         var data = c.data(repo)
-        var out = String('{"library":', _lib_json(found.value()), ',"migrations":[')
+        var out = String('{"library":', _lib_json(found.value(), c.category_of(repo)), ',"migrations":[')
         var first = True
         for ref m in data.ms:
             if not first:
@@ -295,7 +297,7 @@ def repo_json(req: Request, c: Cache) raises -> Response:
             out.write('{"repo":', _q(n.repo), ',"score":', n.score, "}")
         out.write(
             '],"similar_from":{"model":', _q(c.embed_model), ',"model_rev":', _q(c.embed_rev),
-            ',"snapshot":', c.embed_snapshot, "}}",
+            ',"snapshot":', c.embed_snapshot, ',"categories_version":', CATEGORIES_VERSION, "}}",
         )
         return ok_json(out)
     except e:

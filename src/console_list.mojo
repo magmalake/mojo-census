@@ -10,11 +10,13 @@ from listing import (
     select_repos,
     sorted_by,
     with_active,
+    with_category,
     with_estimate,
     with_new,
     with_version,
 )
 from model import Library, day
+from categories import category_keys, category_title
 from search import search_score, url_decode
 
 from console_cache import Cache
@@ -86,7 +88,7 @@ def _list_query(req: Request) -> ListQuery:
     return parse_list_query(
         req.query_param("sort"), req.query_param("dir"),
         url_decode(req.query_param("version")), req.query_param("active"),
-        req.query_param("new"), req.query_param("estimate"),
+        req.query_param("new"), req.query_param("estimate"), req.query_param("category"),
     )
 
 
@@ -112,6 +114,8 @@ def _filter_options(q: ListQuery, c: Cache) -> String:
         if q.active and not c.active[i]:
             continue
         if q.new.byte_length() > 0 and c.news[i] & new_bit(q.new) == 0:
+            continue
+        if q.category.byte_length() > 0 and (i >= len(c.categories) or c.categories[i] != q.category):
             continue
         var bucket = c.est_buckets[i] if q.estimate else c.buckets[i]
         per[bucket] = per.get(bucket, 0) + 1
@@ -145,6 +149,32 @@ def _filter_options(q: ListQuery, c: Cache) -> String:
         "<a class='chip", " on" if q.active else "", "' href='",
         html_escape(list_url(with_active(q, True))), "'>active in the last year</a>",
     )
+    if len(c.categories) == len(c.libs) and c.embed_snapshot >= 0:
+        var cats = Dict[String, Int]()
+        var all = 0
+        for i in range(len(c.libs)):
+            if q.active and not c.active[i]:
+                continue
+            if q.new.byte_length() > 0 and c.news[i] & new_bit(q.new) == 0:
+                continue
+            var b = c.est_buckets[i] if q.estimate else c.buckets[i]
+            if q.version.byte_length() > 0 and b != q.version and (c.est_families[i] if q.estimate else c.families[i]) != q.version:
+                continue
+            cats[c.categories[i]] = cats.get(c.categories[i], 0) + 1
+            all += 1
+        h.write(
+            "<span class=label title='Approximate: by description, and the nearest of 72 hand-labelled repos'>Category</span>",
+            "<a class='chip", " on" if q.category.byte_length() == 0 else "", "' href='",
+            html_escape(list_url(with_category(q, String()))), "'>any (", all, ")</a>",
+        )
+        for ref key in category_keys():
+            var n = cats.get(key, 0)
+            if n > 0 or q.category == key:
+                h.write(
+                    "<a class='chip", " on" if q.category == key else "", "' href='",
+                    html_escape(list_url(with_category(q, key))), "'>", html_escape(category_title(key)),
+                    " (", n, ")</a>",
+                )
     h.write("<span class=label>First commit</span>")
     var news: List[String] = ["", "month", "last-month", "30d"]
     var titles: List[String] = ["any", "this month", "last month", "last 30 days"]
@@ -183,6 +213,11 @@ def _filter_chips(q: ListQuery) -> String:
             "<a class='chip on' href='", html_escape(list_url(with_new(q, String()))),
             "' aria-label='Remove the new repos filter'>", what, " &times;</a>",
         )
+    if q.category.byte_length() > 0:
+        h.write(
+            "<a class='chip on' href='", html_escape(list_url(with_category(q, String()))),
+            "' aria-label='Remove the category filter'>", html_escape(category_title(q.category)), " &times;</a>",
+        )
     h.write("</div>")
     return h^
 
@@ -194,7 +229,7 @@ def repos_page(req: Request, c: Cache) raises -> Response:
             q, c.lines, c.files, c.stars,
             c.est_buckets if q.estimate else c.buckets, c.active,
             c.est_families if q.estimate else c.families, c.news, c.commits30,
-            c.forks, c.used_by,
+            c.forks, c.used_by, c.categories,
         )
         var h = String(
             "<h1>Mojo repos</h1><p class=sub>Mojo repos, versions and growth, counted",
