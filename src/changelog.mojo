@@ -3,8 +3,9 @@
 Only the Markdown the changelog uses: `## <version> - <date>` headings,
 `- ` bullets (blank lines between them, indented continuation lines),
 paragraphs, `**bold**`, `` `code` ``, `[text](url)` links, and PR numbers,
-`#123`, which link to the census's pull requests. The `# Changelog` title is
-dropped: the page has its own.
+`#123`, which link to the census's pull requests. Everything before the
+first `## ` heading (the `# Changelog` title, and the note on fragments for
+contributors) is dropped: the page has its own title and lead.
 """
 
 
@@ -14,8 +15,12 @@ def changelog_html(text: String, pulls: String) -> String:
     var para = String()
     var item = String()
     var in_list = False
+    var started = False
     for raw in text.split("\n"):
         var line = String(raw)
+        if not started and not line.startswith("## "):
+            continue
+        started = True
         if line.startswith("## "):
             _flush(out, para, item, in_list, pulls)
             _close_list(out, in_list)

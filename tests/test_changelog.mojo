@@ -20,10 +20,10 @@ def test_sections_and_bullets() raises:
     )
     var h = changelog_html(md, PULLS)
     assert_false("Changelog" in h)
+    assert_false("fragments" in h)
     assert_equal(
         h,
         String(
-            "<p>The fragments are written here.</p>",
             "<h2 id='v1.1.0'>1.1.0 - 2026-11-10</h2><ul>",
             "<li><strong>New</strong>: a <code>pipe</code> line that wraps. (",
             "<a href='", PULLS, "/100' rel=noopener>#100</a>, ",
@@ -38,20 +38,20 @@ def test_sections_and_bullets() raises:
 
 def test_escapes_links_and_code() raises:
     var h = changelog_html(
-        "- a <b> & [the docs](https://x.dev/a?b=1&c=2) `<x> #5` #PR caf\u00e9\n", PULLS
+        "## 2\n- a <b> & [the docs](https://x.dev/a?b=1&c=2) `<x> #5` #PR caf\u00e9\n", PULLS
     )
     assert_equal(
         h,
         String(
-            "<ul><li>a &lt;b&gt; &amp; <a href='https://x.dev/a?b=1&amp;c=2'",
+            "<h2 id='v2'>2</h2><ul><li>a &lt;b&gt; &amp; <a href='https://x.dev/a?b=1&amp;c=2'",
             " rel=noopener>the docs</a> <code>&lt;x&gt; #5</code> #PR caf\u00e9</li></ul>",
         ),
     )
 
 
 def test_unclosed_markup() raises:
-    var h = changelog_html("an **open `tick [link\n", PULLS)
-    assert_equal(h, "<p>an <strong>open `tick [link</strong></p>")
+    var h = changelog_html("## 1\n\nan **open `tick [link\n", PULLS)
+    assert_equal(h, "<h2 id='v1'>1</h2><p>an <strong>open `tick [link</strong></p>")
     assert_true(changelog_html("", PULLS) == "")
 
 
