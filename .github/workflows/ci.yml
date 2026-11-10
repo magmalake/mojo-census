@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     # dev: the branch the deployed images come from (orca.mojo
-    # docs/hetzner.md, "A dev stack"). main runs only the tests.
-    branches: [main, dev]
+    # docs/hetzner.md, "A dev stack"); lab: the lab stack's, for testing orca
+    # itself. main runs only the tests.
+    branches: [main, dev, lab]
     tags: ['*']
   pull_request:
 
@@ -86,10 +87,11 @@ jobs:
       - name: Size
         run: docker image ls gharchive-image --format '{{.Size}}'
       # Both settings files as `orca register` checks them.
-      - name: orca config check, orca.toml and orca.dev.toml
+      - name: orca config check, orca.toml, orca.dev.toml and orca.lab.toml
         run: |
           docker run --rm gharchive-image config check /opt/orca/orca.toml
           docker run --rm gharchive-image config check /opt/orca/orca.dev.toml
+          docker run --rm gharchive-image config check /opt/orca/orca.lab.toml
       - name: One hour of 2025-01-01 inside the image
         run: |
           docker run --rm --entrypoint sh \
@@ -111,8 +113,9 @@ jobs:
           exit 1
       # What deploy/hetzner expects in orca.mojo: ghcr.io/magmalake/orca:<tag>,
       # pushed here as <tag>-<arch> from the image tested above, which
-      # `manifest` joins under <tag>. On dev and tags only; pull requests
-      # build and test but never push. The tags: scripts/image-tags.sh.
+      # `manifest` joins under <tag>. On dev, lab and tags only; pull requests
+      # build and test but never push. The tags (dev's, lab's and a tag's):
+      # scripts/image-tags.sh.
       # Nothing pushes latest any more: it stays at main's last image.
       - name: Log in to GHCR
         if: github.event_name == 'push'
