@@ -1,8 +1,11 @@
 """The console's How it works pages: `/how`, the pipelines, machines and
-tables with a Mermaid diagram, and `/how/optimizations`, how the pipelines got
-faster."""
+tables with a Mermaid diagram, `/how/optimizations`, how the pipelines got
+faster, and `/how/changelog`, CHANGELOG.md."""
+
+from std.os import getenv
 
 from flare.http import Request, Response, html_escape
+from changelog import changelog_html
 from howimage import HETZNER_SERVER_WEBP, LINEAGE_DARK_WEBP, LINEAGE_LIGHT_WEBP
 
 from console_layout import _nav, _page
@@ -219,6 +222,7 @@ def _how_head(current: String) -> String:
         "<h1>How it works</h1><nav class=tabs aria-label='How it works'>",
         _nav("/how", "Overview", current == "overview"),
         _nav("/how/optimizations", "Optimizations", current == "optimizations"),
+        _nav("/how/changelog", "Changelog", current == "changelog"),
         "</nav>",
     )
 
@@ -258,6 +262,31 @@ def how(req: Request) raises -> Response:
         ),
         "how",
     )
+
+
+def changelog(req: Request) raises -> Response:
+    """CHANGELOG.md, read on each request from `CENSUS_CHANGELOG` (the image's
+    /opt/orca/CHANGELOG.md; CHANGELOG.md in the working directory when unset)."""
+    var url = String(GH, "/mojo-census/blob/main/CHANGELOG.md")
+    var text = String()
+    try:
+        with open(getenv("CENSUS_CHANGELOG", "CHANGELOG.md"), "r") as f:
+            text = f.read()
+    except:
+        pass
+    var h = _how_head("changelog")
+    h.write(
+        "<div class=prose><p class=lead>What changed in each release of the census, newest",
+        " first, as in ",
+        _link(url, "CHANGELOG.md"),
+        ". Each entry links its pull request.</p>",
+    )
+    if text == "":
+        h.write("<p>The changelog isn't on this server; it's on ", _link(url, "GitHub"), ".</p>")
+    else:
+        h.write(changelog_html(text, String(GH, "/mojo-census/pull")))
+    h.write("</div>")
+    return _page("Changelog", h^, "how")
 
 
 def _census_pr(n: Int) -> String:
