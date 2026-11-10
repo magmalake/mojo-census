@@ -28,6 +28,8 @@ struct Embeddings(Movable):
     var repos: List[String]
     var vecs: List[Float32]
     """`dim` values per repo, in `repos`' order."""
+    var inputs: List[String]
+    """The text each was embedded from."""
     var dim: Int
     var model: String
     var model_rev: String
@@ -39,6 +41,7 @@ struct Embeddings(Movable):
     def __init__(out self):
         self.repos = List[String]()
         self.vecs = List[Float32]()
+        self.inputs = List[String]()
         self.dim = 0
         self.model = String()
         self.model_rev = String()
@@ -80,6 +83,7 @@ def latest_of(rows: List[EmbedRow], snapshot: Int64 = -1) -> Embeddings:
         order.append(pick.get(n, 0))
     for i in range(len(names)):
         out.repos.append(names[i])
+        out.inputs.append(rows[order[i]].input)
         var v = vector_of(rows[order[i]].vector)
         for x in v:
             out.vecs.append(x)

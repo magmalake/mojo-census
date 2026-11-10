@@ -1,11 +1,13 @@
 """The Repos table's query: which column it sorts by, which filters it has,
 and the repositories that pass, from plain arrays so the tests need no lake.
 
-    /repos?sort=lines|files|stars|forks|used_by|commits30&dir=asc|desc&version=1.2&active=1y&new=month
+    /repos?sort=lines|files|stars|forks|used_by|commits30&dir=asc|desc&version=1.2&active=1y&new=month&category=ml
 
 The default is the order the repositories come in (most lines of Mojo
 first), which is `sort=lines&dir=desc`.
 """
+
+from categories import is_category
 
 
 @fieldwise_init
@@ -25,12 +27,17 @@ struct ListQuery(Copyable, Movable):
     var estimate: Bool
     """Count a repo with no detected version under the release its date
     estimates (`?estimate=1`); only the version filter looks at it."""
+    var category: String
+    """A category key (`categories.category_keys`); empty for any."""
 
     def is_default_order(self) -> Bool:
         return self.sort == "lines" and not self.asc
 
     def has_filter(self) -> Bool:
-        return self.version.byte_length() > 0 or self.active or self.new.byte_length() > 0
+        return (
+            self.version.byte_length() > 0 or self.active or self.new.byte_length() > 0
+            or self.category.byte_length() > 0
+        )
 
 
 def parse_list_query(
@@ -40,6 +47,7 @@ def parse_list_query(
     active: String,
     new: String = String(),
     estimate: String = String(),
+    category: String = String(),
 ) -> ListQuery:
     """The query from the raw parameters; what isn't recognised is the
     default."""
@@ -49,7 +57,10 @@ def parse_list_query(
     var n = String()
     if new == "month" or new == "last-month" or new == "30d":
         n = new
-    return ListQuery(s, dir == "asc", String(version.strip()), active == "1y", n, estimate == "1")
+    var cat = String()
+    if is_category(category):
+        cat = category
+    return ListQuery(s, dir == "asc", String(version.strip()), active == "1y", n, estimate == "1", cat^)
 
 
 def list_url(q: ListQuery, base: String = "/repos") -> String:
@@ -67,6 +78,8 @@ def list_url(q: ListQuery, base: String = "/repos") -> String:
         parts.append(String("new=", q.new))
     if q.estimate:
         parts.append(String("estimate=1"))
+    if q.category.byte_length() > 0:
+        parts.append(String("category=", q.category))
     if len(parts) == 0:
         return base
     var out = String(base, "?")
@@ -81,29 +94,33 @@ def sorted_by(q: ListQuery, column: String) -> ListQuery:
     """`q` after clicking `column`'s header: the same column flips the
     direction, another starts largest first."""
     if q.sort == column:
-        return ListQuery(q.sort, not q.asc, q.version, q.active, q.new, q.estimate)
-    return ListQuery(column, False, q.version, q.active, q.new, q.estimate)
+        return ListQuery(q.sort, not q.asc, q.version, q.active, q.new, q.estimate, q.category)
+    return ListQuery(column, False, q.version, q.active, q.new, q.estimate, q.category)
 
 
 def with_version(q: ListQuery, version: String) -> ListQuery:
-    return ListQuery(q.sort, q.asc, version, q.active, q.new, q.estimate)
+    return ListQuery(q.sort, q.asc, version, q.active, q.new, q.estimate, q.category)
 
 
 def with_estimate(q: ListQuery, estimate: Bool) -> ListQuery:
-    return ListQuery(q.sort, q.asc, q.version, q.active, q.new, estimate)
+    return ListQuery(q.sort, q.asc, q.version, q.active, q.new, estimate, q.category)
 
 
 def with_active(q: ListQuery, active: Bool) -> ListQuery:
-    return ListQuery(q.sort, q.asc, q.version, active, q.new, q.estimate)
+    return ListQuery(q.sort, q.asc, q.version, active, q.new, q.estimate, q.category)
 
 
 def with_new(q: ListQuery, new: String) -> ListQuery:
-    return ListQuery(q.sort, q.asc, q.version, q.active, new, q.estimate)
+    return ListQuery(q.sort, q.asc, q.version, q.active, new, q.estimate, q.category)
 
 
 comptime NEW_MONTH = 1
 comptime NEW_LAST_MONTH = 2
 comptime NEW_30D = 4
+
+
+def with_category(q: ListQuery, category: String) -> ListQuery:
+    return ListQuery(q.sort, q.asc, q.version, q.active, q.new, q.estimate, category)
 
 
 def new_bit(new: String) -> Int:
@@ -127,6 +144,7 @@ def select_repos(
     commits30: List[Int64] = List[Int64](),
     forks: List[Int64] = List[Int64](),
     used_by: List[Int64] = List[Int64](),
+    categories: List[String] = List[String](),
 ) -> List[Int]:
     """The indices of the repositories that pass `q`'s filters, in its
     order. The arrays are one entry per repository, in the default order;
@@ -139,6 +157,8 @@ def select_repos(
         if q.new.byte_length() > 0 and (len(news) == 0 or news[i] & new_bit(q.new) == 0):
             continue
         if q.active and not active[i]:
+            continue
+        if q.category.byte_length() > 0 and (i >= len(categories) or categories[i] != q.category):
             continue
         idx.append(i)
     if q.is_default_order():

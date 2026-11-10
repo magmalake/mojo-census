@@ -6,6 +6,7 @@ from flare.http import Request, Response, html_escape, internal_error, not_found
 from days import day_text
 from model import Library, MonthActivity, Point, day
 from similar import Neighbor
+from categories import CATEGORIES_VERSION, VOTERS, category_title
 from overview import tool_code, unversioned
 from versions import source_label, usable
 
@@ -127,6 +128,22 @@ def _deps_section(l: Library) -> String:
     return h^
 
 
+def _category_stat(key: String) -> String:
+    """The category tile, linking to the repos in it; nothing before the
+    repo is embedded."""
+    if key.byte_length() == 0:
+        return String()
+    return _stat(
+        "Category",
+        String("<a href='/repos?category=", html_escape(key), "'>", html_escape(category_title(key)), "</a>"),
+        String(
+            "<span title='From its description, and the ", VOTERS,
+            " nearest of 72 hand-labelled repos by embedding (categories v", CATEGORIES_VERSION,
+            "); about 4 in 5 agree with a hand label'>approximate</span>",
+        ),
+    )
+
+
 def _short_rev(rev: String) -> String:
     return String(rev[byte=:8]) if rev.byte_length() > 8 else rev
 
@@ -227,6 +244,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
             _stat("Lines of Mojo", _n(l.mojo_lines), String(_n(l.mojo_files), " files")),
             _stat("Commits", _n(Int64(l.commits)), String(day(l.first_commit), " to ", day(l.last_commit)) if l.commits > 0 else String()),
             _version_stat(l),
+            _category_stat(c.category_of(repo)),
             _stat("Tooling", _or_dash(l.tooling)),
             _stat("License", _or_dash(l.license)),
             "</div></div>",

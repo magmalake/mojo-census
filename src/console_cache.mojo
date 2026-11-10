@@ -38,7 +38,8 @@ from overview import (
 )
 
 from console_migrations import _migrations_body
-from similar import Neighbor, nearest, read_embeddings
+from similar import Embeddings, Neighbor, nearest, read_embeddings
+from categories import categorize
 
 
 comptime REFRESH_SECS = 1800
@@ -137,6 +138,11 @@ struct Cache(Movable):
     var embed_rev: String
     var embed_snapshot: Int64
     """The mojo.repo_embeddings snapshot they're from, -1 for none."""
+    var emb: Embeddings
+    """The embeddings read (one model and revision), for search by meaning."""
+    var categories: List[String]
+    """Each repo's category key (`categories.categorize`), in `libs`' order;
+    "" for one not embedded yet."""
 
     def __init__(out self):
         self.ready = False
@@ -177,6 +183,8 @@ struct Cache(Movable):
         self.embed_model = String()
         self.embed_rev = String()
         self.embed_snapshot = -1
+        self.emb = Embeddings()
+        self.categories = List[String]()
 
     def _build(mut self, today: Int, var src: Sources) raises:
         var b = Builder(today)
@@ -301,9 +309,14 @@ struct Cache(Movable):
             keep[n] = True
         var emb = read_embeddings()
         self.similar = nearest(emb, keep)
+        var cats = categorize(emb)
+        self.categories = List[String]()
+        for ref n in names:
+            self.categories.append(cats.get(n, String()))
         self.embed_model = emb.model
         self.embed_rev = emb.model_rev
         self.embed_snapshot = emb.snapshot
+        self.emb = emb^
         self.repo_rows = b.repo_rows
         self.sources = src^
         self.built_day = today
@@ -311,6 +324,12 @@ struct Cache(Movable):
 
     def data(self, repo: String) -> RepoData:
         return self.details.get(repo, RepoData())
+
+    def category_of(self, repo: String) -> String:
+        for i in range(len(self.libs)):
+            if self.libs[i].repo == repo:
+                return self.categories[i] if i < len(self.categories) else String()
+        return String()
 
     def find(self, repo: String) -> Optional[Library]:
         for ref l in self.libs:
