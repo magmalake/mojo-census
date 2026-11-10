@@ -1,0 +1,1 @@
+- **Python build tools and packaging**: tooling knows uv, poetry, pdm and pip; a new `packaging` column (rattler, conda-build). Run `mojo_retool` after deploying. (#118)
