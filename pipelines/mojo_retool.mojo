@@ -227,7 +227,11 @@ comptime Retool = Step[
     Gather,
     retries=1,
     reads=[REPOS, COMMITS, MIGRATIONS, TAGS],
-    writes=[COMMITS, MIGRATIONS, TAGS],
+    # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
+    # adding them again, so `orca backfill --rerun` needs no --allow-append.
+    # Under replaces=, an orca.tables `append` to them would replace whole
+    # partitions, other keys' rows included: keep writing through replace_files.
+    replaces=[COMMITS, MIGRATIONS, TAGS],
 ]
 # `Keyed` partitions are the `repo` values of `mojo.repos`; `keys_per_run=50`
 # makes `@all` into runs of 50 repositories.

@@ -261,7 +261,11 @@ comptime Embed = Step[
     Mapped,
     retries=1,
     reads=[REPOS, REPO_STATS, REPO_EMBEDDINGS],
-    writes=[REPO_EMBEDDINGS],
+    # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
+    # adding them again, so `orca backfill --rerun` needs no --allow-append.
+    # Under replaces=, an orca.tables `append` to them would replace whole
+    # partitions, other keys' rows included: keep writing through replace_files.
+    replaces=[REPO_EMBEDDINGS],
 ]
 # Daily at 07:00 UTC, an hour after mojo_stats. A day's run embeds what
 # changed since the last, so a missed day needs no catch-up.
