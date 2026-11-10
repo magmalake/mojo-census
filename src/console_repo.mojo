@@ -1,14 +1,16 @@
 """The console's page of one repo (`/repos/<owner>/<name>`): its title block,
-lines of Mojo over time, dependencies, stars per month, releases and tags,
-migrations and latest commits."""
+lines of Mojo over time, dependencies, similar repos, stars per month,
+releases and tags, migrations and latest commits."""
 
 from flare.http import Request, Response, html_escape, internal_error, not_found
 from days import day_text
 from model import Library, MonthActivity, Point, day
+from similar import Neighbor
 from overview import tool_code, unversioned
 from versions import source_label, usable
 
 from console_cache import Cache
+from console_how import ORCA_UI
 from console_layout import _age, _chips, _empty, _n, _now_days, _or_dash, _page, _this_month
 from console_migrations import _line_chart
 
@@ -125,6 +127,44 @@ def _deps_section(l: Library) -> String:
     return h^
 
 
+def _short_rev(rev: String) -> String:
+    return String(rev[byte=:8]) if rev.byte_length() > 8 else rev
+
+
+def _similar_section(repo: String, c: Cache) -> String:
+    """The repos nearest it by embedding (`similar.nearest`), with the model
+    and snapshot they're from; nothing before mojo_embed has run."""
+    if c.embed_snapshot < 0:
+        return String()
+    var h = String("<h2>Similar repos</h2>")
+    var near = c.similar.get(repo, List[Neighbor]())
+    if len(near) == 0:
+        h.write(_empty("Not embedded yet", "mojo_embed hasn't embedded this repository's description yet."))
+        return h^
+    h.write(
+        "<div class=tbl><table><thead><tr><th>Repo</th><th>Description</th>",
+        "<th class=num>Similarity</th></tr></thead><tbody>",
+    )
+    for ref n in near:
+        var desc = String()
+        var other = c.find(n.repo)
+        if other:
+            desc = other.value().description
+        h.write(
+            "<tr><td><a class=repo href='/repos/", html_escape(n.repo), "'>", html_escape(n.repo),
+            "</a></td><td class=soft>", _or_dash(desc), "</td><td class=num>",
+            Int(n.score * 100 + 0.5), "%</td></tr>",
+        )
+    h.write(
+        "</tbody></table></div><p class=mute>By the cosine of the embeddings of each repo's name, ",
+        "description and topics: <code>", html_escape(c.embed_model), "</code> at <code>",
+        html_escape(_short_rev(c.embed_rev)), "</code>, from snapshot ", c.embed_snapshot,
+        " of mojo.repo_embeddings, which <a href='", ORCA_UI,
+        "/pipelines/mojo_embed' rel=noopener>mojo_embed</a> writes.</p>",
+    )
+    return h^
+
+
 def _version_stat(l: Library) -> String:
     """The Mojo version tile: the detected version and where it was read
     (`24.4`, from CI), else why there is none, and the estimate by date, kept
@@ -192,6 +232,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
             "</div></div>",
             "<h2>Lines of Mojo</h2>", _chart(pts),
             _deps_section(l),
+            _similar_section(repo, c),
             "<h2>Stars per month</h2>",
         )
         ref loaded = c.loaded
