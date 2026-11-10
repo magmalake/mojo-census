@@ -38,6 +38,7 @@ from overview import (
 )
 
 from console_migrations import _migrations_body
+from similar import Neighbor, nearest, read_embeddings
 
 
 comptime REFRESH_SECS = 1800
@@ -129,6 +130,13 @@ struct Cache(Movable):
     var history: List[Int64]
     """Per repo, the first-parent commits mojo_history recorded (its last
     seq + 1), for the checks."""
+    var similar: Dict[String, List[Neighbor]]
+    """Per repo with an embedding: its `SIMILAR_SHOWN` nearest repos."""
+    var embed_model: String
+    """The model and revision of the embeddings `similar` compares."""
+    var embed_rev: String
+    var embed_snapshot: Int64
+    """The mojo.repo_embeddings snapshot they're from, -1 for none."""
 
     def __init__(out self):
         self.ready = False
@@ -165,6 +173,10 @@ struct Cache(Movable):
         self.built_at = 0
         self.repo_rows = 0
         self.history = List[Int64]()
+        self.similar = Dict[String, List[Neighbor]]()
+        self.embed_model = String()
+        self.embed_rev = String()
+        self.embed_snapshot = -1
 
     def _build(mut self, today: Int, var src: Sources) raises:
         var b = Builder(today)
@@ -284,6 +296,14 @@ struct Cache(Movable):
         self.active = active^
         self.libs = libs^
         self.history = history^
+        var keep = Dict[String, Bool]()
+        for ref n in names:
+            keep[n] = True
+        var emb = read_embeddings()
+        self.similar = nearest(emb, keep)
+        self.embed_model = emb.model
+        self.embed_rev = emb.model_rev
+        self.embed_snapshot = emb.snapshot
         self.repo_rows = b.repo_rows
         self.sources = src^
         self.built_day = today
