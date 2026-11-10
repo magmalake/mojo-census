@@ -25,6 +25,7 @@ comptime REPO_DEPS = "mojo.repo_deps"
 comptime CANDIDATES = "gharchive.candidates"
 comptime REPO_HOUR = "gharchive.repo_hour"
 comptime GH_RELEASES = "gharchive.releases"
+comptime REPO_EMBEDDINGS = "mojo.repo_embeddings"
 
 comptime EVENTS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -195,6 +196,24 @@ repository with a manifest still has its row; the console prefers the
 version mojo.commits has and falls back to this one. `declared_deps` came
 later (ensure_table adds it): the number of distinct dependencies HEAD's
 manifests declare, toolchain left out, null for a row read before."""
+
+comptime REPO_EMBEDDINGS_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"model","required":true,"type":"string"},'
+    '{"id":3,"name":"model_rev","required":true,"type":"string"},'
+    '{"id":4,"name":"input_hash","required":true,"type":"string"},'
+    '{"id":5,"name":"input","required":true,"type":"string"},'
+    '{"id":6,"name":"dim","required":true,"type":"int"},'
+    '{"id":7,"name":"vector","required":true,"type":"binary"},'
+    '{"id":8,"name":"embedded_at","required":true,"type":"timestamptz"}]}'
+)
+"""One row per repository (mojo_embed): the sentence embedding of its name,
+description and topics (`input`, the text the model read). `vector` is `dim`
+float32 values, little-endian, L2-normalized, so a dot product is the
+cosine. `model` names the model (MOJO_EMBED_MODEL_NAME) and `model_rev` is
+a hash of its weights; `input_hash` hashes the input and model_rev, and a
+run re-embeds a repository only when it changes."""
 
 comptime REPO_DEPS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -390,6 +409,10 @@ def tags_schema() raises -> Schema:
 
 def repo_versions_schema() raises -> Schema:
     return Schema.parse(REPO_VERSIONS_SCHEMA)
+
+
+def repo_embeddings_schema() raises -> Schema:
+    return Schema.parse(REPO_EMBEDDINGS_SCHEMA)
 
 
 def repo_deps_schema() raises -> Schema:

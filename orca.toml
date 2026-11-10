@@ -105,3 +105,11 @@ env = { DISTA_WORKER_SLOTS = "2" }
 # Learned (orca #269).
 memory_gb = "auto"
 secrets = { GITHUB_TOKEN = "orca/github-token" }
+
+# Daily at 07:00 UTC, after mojo_stats; embeds only the repositories whose
+# name, description or topics changed (about 180 a second on the CAX21's
+# four cores, ~310 MB). The model isn't in the image: the first run after a
+# deploy downloads it (133 MB) into MOJO_EMBED_MODEL and checks its hash.
+[pipelines.mojo_embed]
+memory_gb = "auto..2"
+env = { MOJO_EMBED_MODEL = "/tmp/mojo-census/models/bge-small-en-v1.5" }

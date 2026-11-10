@@ -75,6 +75,10 @@ jobs:
           docker run --rm --entrypoint sh \
             -e GHARCHIVE_HOURS=0 -e ORCA_WAREHOUSE=/tmp/w gharchive-image \
             -c 'gharchive run --partitions 2025-01-01'
+      # The encoder (max-core) links and loads in the image; its numbers are
+      # checked by magmalake/encoder.mojo's own CI on the same runner type.
+      - name: mojo_embed loads inside the image
+        run: docker run --rm --entrypoint mojo_embed gharchive-image describe
       - name: The console starts and answers
         run: |
           docker run -d --name console -p 8080:8080 -e PORT=8080 \
