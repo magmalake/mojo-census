@@ -30,6 +30,7 @@ from versions import (
     manifest_version,
     pick_version,
     pin_version,
+    pylock_version,
     readme_version,
     script_version,
     usable,
@@ -120,7 +121,10 @@ def classify(paths: List[String]) -> Candidates:
         var base = _base(p)
         var low = base.lower()
         var root = base == p
-        if root and (p == "magic.lock" or p == "pixi.lock"):
+        if root and (
+            p == "magic.lock" or p == "pixi.lock" or p == "uv.lock"
+            or p == "poetry.lock" or p == "pdm.lock"
+        ):
             c.lock.append(p)
         elif root and (
             p == "pixi.toml" or p == "mojoproject.toml" or p == "pyproject.toml"
@@ -215,7 +219,11 @@ def _first(
         # nothing, `pin_version` reads their `mojo==...` pins.
         var v: String
         if kind == "lock":
+            # A conda lock (`.../mojo-1.2.0-....conda`), else a Python one
+            # (`name = "mojo"`, `version = "1.2.0"`).
             v = lock_version(text)
+            if not usable(v):
+                v = pylock_version(text)
         elif kind == "manifest":
             v = manifest_version(text)
             if not usable(v):

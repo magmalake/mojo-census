@@ -10,6 +10,7 @@ from headversion import classify
 from mojo_releases import estimate_version
 from days import days_of
 from versions import (
+    ToolFiles,
     file_version,
     manifest_version,
     pick_version,
@@ -167,7 +168,10 @@ def test_pixi_without_mojo() raises:
         'python = ">=3.13.0,<3.14"\nconda = ">=25.5.1,<26"\n'
     )
     assert_equal(manifest_version(toml), "")
-    assert_equal(tooling(True, True, False, False), "pixi")
+    var f = ToolFiles()
+    f.pixi_toml = True
+    f.pixi_lock = True
+    assert_equal(tooling(f), "pixi")
 
 
 def test_source_labels() raises:
@@ -175,6 +179,9 @@ def test_source_labels() raises:
     assert_equal(source_label("magic.lock"), "lock file")
     assert_equal(source_label("pixi.toml"), "manifest")
     assert_equal(source_label("mojoproject.toml"), "manifest")
+    assert_equal(source_label("uv.lock"), "lock file")
+    assert_equal(source_label("pyproject.toml"), "manifest")
+    assert_equal(source_label("requirements.txt"), "manifest")
     assert_equal(source_label("ci"), "CI")
     assert_equal(source_label("readme"), "README")
     assert_equal(source_label("repo"), "the repo itself")
@@ -213,6 +220,13 @@ def test_classify_files() raises:
     assert_equal(len(c.docker), 3)
     assert_equal(len(c.readme), 1)
     assert_equal(c.readme[0], "README.md")
+    # mojo-tokenizers: a uv.lock is a lock file too.
+    var uv: List[String] = ["pyproject.toml", "uv.lock", "recipe.yaml", "sub/uv.lock"]
+    var cu = classify(uv)
+    assert_equal(len(cu.lock), 1)
+    assert_equal(cu.lock[0], "uv.lock")
+    assert_equal(len(cu.manifest), 1)
+    assert_equal(len(cu.deps), 2)
 
 
 def main() raises:

@@ -104,7 +104,7 @@ def overview_json(req: Request, c: Cache) raises -> Response:
             ',"repos":', ov.repos_series[k], ',"commits":', ov.commits_series[k],
             ',"tooling":{"none":', ov.tool_none[k], ',"magic":', ov.tool_magic[k],
             ',"pixi":', ov.tool_pixi[k],
-            ',"bazel":', ov.tool_bazel[k], "}}",
+            ',"bazel":', ov.tool_bazel[k], ',"python":', ov.tool_python[k], "}}",
         )
     out += '],"rising":['
     for i in range(len(c.rising)):
@@ -202,7 +202,8 @@ def _lib_json(l: Library, category: String = String()) -> String:
         ',"forks":', l.forks, ',"license":', _q(l.license),
         ',"size_kb":', l.size_kb, ',"commits":', l.commits,
         ',"mojo_lines":', l.mojo_lines, ',"mojo_files":', l.mojo_files,
-        ',"tooling":', _q(l.tooling), ',"mojo_version":', _q(l.mojo_version),
+        ',"tooling":', _q(l.tooling), ',"packaging":', _q(l.packaging),
+        ',"mojo_version":', _q(l.mojo_version),
         ',"version_source":', _q(_source_name(l.version_source)), ',"version_file":', _q(l.version_file),
         ',"version_estimate":', _q(l.version_estimate),
         ',"version_estimate_source":', _q("date" if l.version_estimate.byte_length() > 0 else ""),

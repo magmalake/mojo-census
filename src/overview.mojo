@@ -13,7 +13,7 @@ at the end, carrying each repository's last state forward month by month.
 """
 
 from search import sort_buckets, sort_families, version_bucket, version_family
-from versions import compare_versions, version_key
+from versions import compare_versions, is_python_tool, version_key
 
 comptime DAY_US = Int64(86_400_000_000)
 comptime BASE_MONTH = (2022 - 1970) * 12
@@ -28,6 +28,8 @@ comptime TOOL_NONE = UInt8(0)
 comptime TOOL_MAGIC = UInt8(1)
 comptime TOOL_PIXI = UInt8(2)
 comptime TOOL_BAZEL = UInt8(3)
+comptime TOOL_PYTHON = UInt8(4)
+"""uv, poetry, pdm and pip together: Mojo from PyPI."""
 
 
 def month_of_days(days: Int) -> Int:
@@ -59,16 +61,16 @@ def month_label(index: Int) -> String:
 
 
 def tool_code(tooling: String) -> UInt8:
-    """`magic` is 1, `pixi` 2, `bazel` 3, anything else (`none`, empty) 0."""
-    var b = tooling.as_bytes()
-    if len(b) == 0:
-        return TOOL_NONE
-    if b[0] == UInt8(ord("m")):
+    """`magic` is 1, `pixi` 2, `bazel` 3, a Python build tool (`uv`,
+    `poetry`, `pdm`, `pip`) 4, anything else (`none`, empty) 0."""
+    if tooling == "magic":
         return TOOL_MAGIC
-    if b[0] == UInt8(ord("p")):
+    if tooling == "pixi":
         return TOOL_PIXI
-    if b[0] == UInt8(ord("b")):
+    if tooling == "bazel":
         return TOOL_BAZEL
+    if is_python_tool(tooling):
+        return TOOL_PYTHON
     return TOOL_NONE
 
 
@@ -171,6 +173,7 @@ struct Overview(Movable):
     var tool_magic: List[Int64]
     var tool_pixi: List[Int64]
     var tool_bazel: List[Int64]
+    var tool_python: List[Int64]
 
     def __init__(out self):
         self.repos = 0
@@ -206,6 +209,7 @@ struct Overview(Movable):
         self.tool_magic = List[Int64]()
         self.tool_pixi = List[Int64]()
         self.tool_bazel = List[Int64]()
+        self.tool_python = List[Int64]()
 
 
 struct Recent(Movable):
@@ -402,6 +406,7 @@ struct Builder(Movable):
         var magic = List[Int64](length=m, fill=0)
         var pixi = List[Int64](length=m, fill=0)
         var bazel = List[Int64](length=m, fill=0)
+        var python = List[Int64](length=m, fill=0)
         var seq_p = self.cell_seq.unsafe_ptr()
         var lines_p = self.cell_lines.unsafe_ptr()
         var tool_p = self.cell_tool.unsafe_ptr()
@@ -424,6 +429,8 @@ struct Builder(Movable):
                         pixi[k] += 1
                     elif carry_tool == TOOL_BAZEL:
                         bazel[k] += 1
+                    elif carry_tool == TOOL_PYTHON:
+                        python[k] += 1
                     else:
                         none[k] += 1
         var first = 0
@@ -438,6 +445,7 @@ struct Builder(Movable):
             o.tool_magic.append(magic[k])
             o.tool_pixi.append(pixi[k])
             o.tool_bazel.append(bazel[k])
+            o.tool_python.append(python[k])
         return o^
 
 

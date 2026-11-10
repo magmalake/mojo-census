@@ -60,6 +60,12 @@ def test_tool_code() raises:
     assert_equal(tool_code("magic"), 1)
     assert_equal(tool_code("pixi"), 2)
     assert_equal(tool_code("bazel"), 3)
+    assert_equal(tool_code("uv"), 4)
+    assert_equal(tool_code("poetry"), 4)
+    assert_equal(tool_code("pdm"), 4)
+    assert_equal(tool_code("pip"), 4)
+    # Not by the first letter any more: `pip` and `poetry` aren't pixi.
+    assert_equal(tool_code("pixie"), 0)
     assert_equal(tool_code("none"), 0)
     assert_equal(tool_code(""), 0)
 
