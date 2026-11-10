@@ -1,6 +1,6 @@
 """The console's JSON under `/api/`: the overview, the repos, a search, the
-migrations per month and one repo with its commits, migrations, activity and
-releases."""
+migrations per month and one repo with its commits, migrations, activity,
+releases and similar repos."""
 
 from flare.http import Request, Response, internal_error, not_found, ok_json
 
@@ -12,6 +12,7 @@ from search import url_decode, version_bucket, version_family
 
 from console_cache import Cache
 from console_list import _matches
+from similar import Neighbor
 
 
 def _q(s: String) -> String:
@@ -285,7 +286,17 @@ def repo_json(req: Request, c: Cache) raises -> Response:
                 "true" if x.prerelease else "false", ',"source":', _q(x.source),
                 ',"commit":', _q(x.commit), ',"mojo_version":', _q(x.mojo_version), "}",
             )
-        out += "]}"
+        out += '],"similar":['
+        first = True
+        for ref n in c.similar.get(repo, List[Neighbor]()):
+            if not first:
+                out += ","
+            first = False
+            out.write('{"repo":', _q(n.repo), ',"score":', n.score, "}")
+        out.write(
+            '],"similar_from":{"model":', _q(c.embed_model), ',"model_rev":', _q(c.embed_rev),
+            ',"snapshot":', c.embed_snapshot, "}}",
+        )
         return ok_json(out)
     except e:
         return internal_error(String(e))

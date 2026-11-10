@@ -672,7 +672,7 @@ struct Sources(Copyable, Movable):
 
     var ids: List[Int64]
     """The current snapshot id of each table `read_sources` looks at (repos,
-    commits, repo_stats, activity), -1 for a table that doesn't exist or is
+    commits, repo_stats, activity, ..., repo_embeddings), -1 for a table that doesn't exist or is
     empty."""
     var as_of_ms: Int64
     """The newest snapshot time of those tables."""
@@ -717,6 +717,7 @@ def read_sources() raises -> Sources:
     var out = Sources()
     var names: List[String] = [
         "repos", "commits", "repo_stats", "activity", "migrations", "releases", "tags",
+        "repo_embeddings",
     ]
     for name in names:
         var t = try_load("mojo", name)

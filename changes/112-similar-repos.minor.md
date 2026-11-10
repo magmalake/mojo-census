@@ -1,0 +1,1 @@
+- **Similar repos**: each repo page and its JSON list the 5 repos nearest it by embedding, with the model and snapshot they come from. (#101, #112)
