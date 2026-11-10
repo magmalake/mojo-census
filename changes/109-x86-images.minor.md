@@ -1,0 +1,1 @@
+- **amd64 images**: each image is built for arm64 and amd64. (#109)
