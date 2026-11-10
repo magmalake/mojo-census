@@ -38,7 +38,7 @@ from overview import (
 )
 
 from console_migrations import _migrations_body
-from similar import Neighbor, nearest, read_embeddings
+from similar import Embeddings, Neighbor, nearest, read_embeddings
 from categories import categorize
 
 
@@ -138,6 +138,8 @@ struct Cache(Movable):
     var embed_rev: String
     var embed_snapshot: Int64
     """The mojo.repo_embeddings snapshot they're from, -1 for none."""
+    var emb: Embeddings
+    """The embeddings read (one model and revision), for search by meaning."""
     var categories: List[String]
     """Each repo's category key (`categories.categorize`), in `libs`' order;
     "" for one not embedded yet."""
@@ -181,6 +183,7 @@ struct Cache(Movable):
         self.embed_model = String()
         self.embed_rev = String()
         self.embed_snapshot = -1
+        self.emb = Embeddings()
         self.categories = List[String]()
 
     def _build(mut self, today: Int, var src: Sources) raises:
@@ -313,6 +316,7 @@ struct Cache(Movable):
         self.embed_model = emb.model
         self.embed_rev = emb.model_rev
         self.embed_snapshot = emb.snapshot
+        self.emb = emb^
         self.repo_rows = b.repo_rows
         self.sources = src^
         self.built_day = today

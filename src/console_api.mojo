@@ -11,7 +11,7 @@ from overview import ARCHIVE_START, RISING_FORK_WEIGHT, RISING_USED_BY_WEIGHT, a
 from search import url_decode, version_bucket, version_family
 
 from console_cache import Cache
-from console_list import _matches
+from console_list import _matches, meaning_hits
 from similar import Neighbor
 from categories import CATEGORIES_VERSION
 
@@ -146,17 +146,27 @@ def overview_json(req: Request, c: Cache) raises -> Response:
     return ok_json(out)
 
 
-def search_json(req: Request, c: Cache) raises -> Response:
+def search_json(req: Request, c: Cache, qv: List[Float32] = List[Float32]()) raises -> Response:
+    """The text matches, then the repos related by meaning; each with
+    `match` (`text` or `meaning`) and, for meaning, `score` (the cosine)."""
     try:
         var q = String(url_decode(req.query_param("q")).strip())
         var out = String("[")
         if q.byte_length() > 0:
             var first = True
-            for i in _matches(q, c):
+            var hits = _matches(q, c)
+            for i in hits:
                 if not first:
                     out += ","
                 first = False
-                out += _lib_json(c.libs[i], c.categories[i] if i < len(c.categories) else String())
+                var j = _lib_json(c.libs[i], c.categories[i] if i < len(c.categories) else String())
+                out.write(String(j[byte = : j.byte_length() - 1]), ',"match":"text"}')
+            for ref r in meaning_hits(c, qv, hits):
+                if not first:
+                    out += ","
+                first = False
+                var j = _lib_json(c.libs[r.index], c.categories[r.index] if r.index < len(c.categories) else String())
+                out.write(String(j[byte = : j.byte_length() - 1]), ',"match":"meaning","score":', r.score, "}")
         out += "]"
         return ok_json(out)
     except e:
