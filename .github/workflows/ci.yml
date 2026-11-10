@@ -65,9 +65,11 @@ jobs:
       GHCR_IMAGE: ghcr.io/magmalake/orca
     steps:
       - uses: actions/checkout@v4
-      # Buildx, for its layer cache in GitHub's Actions cache: every layer
-      # (mode=max, the intermediate stages too), so a commit that changes only
-      # source reuses `pixi install` and the git build (see Dockerfile.orca).
+      # No layer cache (#117): with `type=gha,mode=max` each build wrote
+      # several GB to GitHub's Actions cache, which holds 10 GB a repository,
+      # so the next build found it evicted and still paid 8 to 11 minutes to
+      # export. A hit would have saved only `pixi install` and the git build
+      # (about 3 minutes); the compile runs on every commit anyway.
       # load puts the image in the runner's docker, for the steps below.
       - uses: docker/setup-buildx-action@v3
       - name: Build the image
@@ -77,8 +79,6 @@ jobs:
           file: Dockerfile.orca
           tags: gharchive-image
           load: true
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           build-args: |
             ORCA_SOURCE=https://github.com/${{ github.repository }}
             ORCA_COMMIT=${{ github.sha }}
