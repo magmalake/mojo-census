@@ -114,3 +114,28 @@ jobs:
             docker tag gharchive-image "$GHCR_IMAGE:$t"
             docker push "$GHCR_IMAGE:$t"
           done
+
+  # A tag's GitHub release, once its image is pushed: the notes are the
+  # version's section of CHANGELOG.md (changes/README.md).
+  release:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [test, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The release
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          notes=$RUNNER_TEMP/notes.md
+          awk -v head="## $version " 'index($0, head) == 1 { on = 1; next } on && /^## / { exit } on' CHANGELOG.md > "$notes"
+          [ -s "$notes" ] || { echo "::error::CHANGELOG.md has no section for $version"; exit 1; }
+          printf '\nImage: `ghcr.io/magmalake/orca:%s` (`:%s`).\n' "$version" "${GITHUB_SHA::7}" >> "$notes"
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "mojo-census $version" --notes-file "$notes"
+          fi
