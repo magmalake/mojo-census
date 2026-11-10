@@ -3,13 +3,20 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
-## 0.1.0 - 2026-11-10
-
-The first tagged release: the image `ghcr.io/magmalake/orca:0.1.0`, with
-orca-mojo 0.21.1.
+## 1.1.0 - 2026-11-10
 
 - **`mojo_embed`, repository embeddings**: a daily pipeline (07:00 UTC) writes `mojo.repo_embeddings`, a bge-small-en-v1.5 vector per repository from its description and topics, with encoder-mojo 0.1.0 on the CPU; it re-embeds only repositories whose text changed and downloads the model (133 MB) to `MOJO_EMBED_MODEL` on its first run. (#100, #103)
 
 - **orca 0.21.1**: runs held at their memory limit are killed and retried bigger, out-of-memory raises expire after 20 good runs, and learned CPUs fit the host. (#104)
 
-- **The census so far**: GH Archive into `gharchive.events` and its candidate, hourly and release tables (`gharchive`), Mojo repositories found from them (`mojo_repos`), their histories, migrations, tags and Mojo versions (`mojo_history`, `mojo_versions`), activity by month (`mojo_activity`) and GitHub stats (`mojo_stats`), read by the flare console at mojourney.dev.
+- **A changelog and GitHub releases**: each PR adds a fragment to `changes/`, `scripts/changelog.sh` writes them here at a release, and a tag's CI makes its GitHub release from its section. (#105)
+
+## 1.0.0 - 2026-11-10
+
+The census as it ran at mojourney.dev before embeddings, with orca-mojo
+0.21.0, tagged after the fact at the merge of #99.
+
+- **GH Archive**: each day from 2023-01-01 into `gharchive.events`, with its candidate, hourly and release tables (`gharchive`, `gharchive_index`).
+- **Mojo repositories**: found from the candidates (`mojo_repos`), with their histories, migrations, tags and Mojo versions (`mojo_history`, `mojo_versions`, `mojo_retool`), activity by month (`mojo_activity`) and GitHub stats (`mojo_stats`).
+- **The console**: a flare app at mojourney.dev over those tables.
+- **The dev stack**: images from the `dev` branch, `orca.dev.toml` and the dev-only `ballast` pipeline (#87, #97, #99).
