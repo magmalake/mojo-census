@@ -1,1 +1,0 @@
-- **A changelog and GitHub releases**: each PR adds a fragment to `changes/`, `scripts/changelog.sh` writes them here at a release, and a tag's CI makes its GitHub release from its section. (#105)

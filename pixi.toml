@@ -3,8 +3,8 @@ preview = ["pixi-build"]
 authors = ["Marius S <39998+winding-lines@users.noreply.github.com>"]
 channels = ["https://conda.modular.com/max", "conda-forge"]
 name = "mojo-census"
-platforms = ["osx-arm64", "linux-aarch64"]
-version = "1.0.0"
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+version = "1.1.0"
 
 [tasks]
 # Each program alone (the image builds them all as one: `build` below).
@@ -33,7 +33,7 @@ build-each = { depends-on = ["build-orca", "build-maintain", "build-pipelines", 
 # gharchive built from origin/main: `git archive origin/main | tar -x -C DIR`,
 # then `mojo build -I DIR/src DIR/pipelines/gharchive.mojo -o build/gharchive-main`.
 test-daily = { cmd = "sh scripts/test-daily.sh build/gharchive-main build/gharchive", depends-on = ["build-gharchive"] }
-test = "mojo run -I src tests/test_versions.mojo && mojo run -I src tests/test_history.mojo && mojo run -I src tests/test_datafiles.mojo && mojo run -I src tests/test_jscan.mojo && mojo run -I src tests/test_events.mojo && mojo run -I src tests/test_search.mojo && mojo run -I src tests/test_activity.mojo && mojo run -I src tests/test_hourindex.mojo && mojo run -I src tests/test_eventsoff.mojo && mojo run -I src tests/test_stats.mojo && mojo run -I src tests/test_overview.mojo && mojo run -I src tests/test_swap.mojo && mojo run -I src tests/test_checks.mojo && mojo run -I src tests/test_headversion.mojo && mojo run -I src tests/test_deps.mojo && mojo run -I src tests/test_model.mojo && mojo run -I src tests/test_sortrows.mojo && mojo run -I src tests/test_eventrows.mojo && mojo run -I src tests/test_hourmemory.mojo && mojo run -I src tests/test_fetch.mojo && mojo run -I src tests/test_analytics.mojo && mojo run -I src tests/test_embedtext.mojo && mojo run -I src tests/test_changelog.mojo"
+test = "mojo run -I src tests/test_versions.mojo && mojo run -I src tests/test_history.mojo && mojo run -I src tests/test_datafiles.mojo && mojo run -I src tests/test_jscan.mojo && mojo run -I src tests/test_events.mojo && mojo run -I src tests/test_search.mojo && mojo run -I src tests/test_activity.mojo && mojo run -I src tests/test_hourindex.mojo && mojo run -I src tests/test_eventsoff.mojo && mojo run -I src tests/test_stats.mojo && mojo run -I src tests/test_overview.mojo && mojo run -I src tests/test_swap.mojo && mojo run -I src tests/test_checks.mojo && mojo run -I src tests/test_headversion.mojo && mojo run -I src tests/test_deps.mojo && mojo run -I src tests/test_model.mojo && mojo run -I src tests/test_sortrows.mojo && mojo run -I src tests/test_eventrows.mojo && mojo run -I src tests/test_hourmemory.mojo && mojo run -I src tests/test_fetch.mojo && mojo run -I src tests/test_analytics.mojo && mojo run -I src tests/test_embedtext.mojo && mojo run -I src tests/test_changelog.mojo && mojo run -I src tests/test_similar.mojo && mojo run -I src tests/test_categories.mojo && mojo run -I src tests/test_querymodel.mojo"
 
 [dependencies]
 mojo-compiler = "==1.2.0"
@@ -58,8 +58,8 @@ avro-mojo = { git = "https://github.com/magmalake/avro.mojo.git", rev = "d5b26cc
 roaring-mojo = { git = "https://github.com/magmalake/roaring.mojo.git", rev = "a90a7bd30cf1c21403a29059282072e93fbeeee2" }
 hashes-mojo = { git = "https://github.com/magmalake/hashes.mojo.git", rev = "395aca597f9410bd0511df44d972f14b10a8b01d" }
 iceberg-mojo = { git = "https://github.com/magmalake/iceberg.mojo.git", rev = "bb361f975f9f56d33218850a5f3d048202a85f02" }
-orca-mojo = { git = "https://github.com/magmalake/orca.mojo.git", rev = "8b7689a48c860ec5f361cdc9d4b291e085c3a84a" }
+orca-mojo = { git = "https://github.com/magmalake/orca.mojo.git", rev = "bdaefcc879a33babd5379947d4cf282dc5ba5fff" }
 # mojo_embed's sentence embeddings; brings max-core (its matmul kernels).
-encoder-mojo = { git = "https://github.com/magmalake/encoder.mojo.git", rev = "66286b921f54976e87697d47d62bba39a16907ff" }
+encoder-mojo = { git = "https://github.com/magmalake/encoder.mojo.git", rev = "34d8651903c4a4f94d9025de15a88cd3693e2df7" }
 postgresql = ">=18.4,<19"
 git = ">=2.56.0,<3"

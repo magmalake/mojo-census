@@ -7,7 +7,8 @@ and mojo.repo_deps.
 Pages: `/` the overview (cards, repos per Mojo version, growth curves),
 `/repos` the repos by size and age (`?sort=lines|files|stars|forks|used_by&dir=asc|desc`,
 `?version=1.x`, `?active=1y`), `/search?q=` finds repos by name, GitHub topic
-or description, `/migrations` the migrations to each Mojo version over time,
+or description, then by meaning (the query embedded with mojo_embed's model,
+which the console downloads on its first start; CONSOLE_SEMANTIC=0 turns it off), `/migrations` the migrations to each Mojo version over time,
 `/how`, `/how/optimizations` and `/how/changelog` how the census is built,
 `/repos/<owner>/<name>` one repo. The data pages have JSON at `/api/...`.
 
@@ -48,7 +49,9 @@ from threads import OpaquePtr, ThreadHandle
 from checks import CheckRun, RepoFacts, Tops, notice, page_facts, publish, run_checks, when
 from days import day_text
 from model import Point, read_days, read_sources
+from search import url_decode
 from swap import Swap, check_due, needs_build
+from querymodel import QueryModel, load_model, semantic_on
 
 from console_api import index_json, overview_json, repo_json, search_json, versions_json
 from console_cache import RETRY_SECS, Cache, refresh_secs
@@ -125,6 +128,11 @@ struct Shared(ImplicitlyCopyable):
     """The `Swap[Cache]`."""
     var checks: Int
     """The `Swap[CheckRun]`: the last data checks."""
+    var model: Int
+    """The `Swap[QueryModel]`: the search-query encoder, once loaded."""
+
+
+comptime MODEL_RETRY_SECS = 3600
 
 
 def _refresher(arg: OpaquePtr) -> OpaquePtr:
@@ -135,8 +143,10 @@ def _refresher(arg: OpaquePtr) -> OpaquePtr:
     var sh = Pointer[Shared, MutUntrackedOrigin](unsafe_from_address=Int(arg))[]
     ref sw = Pointer[Swap[Cache], MutUntrackedOrigin](unsafe_from_address=sh.cache)[]
     ref runs = Pointer[Swap[CheckRun], MutUntrackedOrigin](unsafe_from_address=sh.checks)[]
+    ref models = Pointer[Swap[QueryModel], MutUntrackedOrigin](unsafe_from_address=sh.model)[]
     var interval = refresh_secs()
     var checked = Int64(0)
+    var model_tried = Int64(0)
     while True:
         try:
             var t = now()
@@ -156,6 +166,19 @@ def _refresher(arg: OpaquePtr) -> OpaquePtr:
                     checked = t - Int64(interval) + Int64(min(interval, RETRY_SECS))
         except e:
             print("console: refresher:", e)
+        # The search-query model, once there is a build to serve: it downloads
+        # (once) and loads beside the pages, which search without it until then.
+        try:
+            var t = now()
+            if (
+                semantic_on() and not models.get()[].ready() and sw.get()[].ready
+                and t - model_tried >= MODEL_RETRY_SECS
+            ):
+                model_tried = t
+                models.put(load_model())
+                print("console: search model loaded in", now() - t, "s")
+        except e:
+            print("console: search model:", e, "; searching by text only, trying again in an hour")
         sleep(1.0)
 
 
@@ -182,6 +205,8 @@ struct Site(Handler, Copyable):
     """The address of the `Swap[Cache]`, which lives as long as the process."""
     var checks: Int
     """The address of the `Swap[CheckRun]`."""
+    var model: Int
+    """The address of the `Swap[QueryModel]`."""
 
     def serve(self, req: Request) raises -> Response:
         ref sw = Pointer[Swap[Cache], MutUntrackedOrigin](unsafe_from_address=self.cache)[]
@@ -203,13 +228,29 @@ struct Site(Handler, Copyable):
         resp.headers.set("Cache-Control", EDGE_CACHE if resp.status == 200 else "no-store")
         return resp^
 
+    def _query_vector(self, req: Request, c: Cache) -> List[Float32]:
+        """`?q=` embedded, when the model is loaded and is the revision the
+        repos were embedded with; else empty (text search only)."""
+        ref models = Pointer[Swap[QueryModel], MutUntrackedOrigin](unsafe_from_address=self.model)[]
+        var held = models.get()
+        if not held[].ready() or held[].rev() != c.embed_rev:
+            return List[Float32]()
+        try:
+            var q = String(url_decode(req.query_param("q")).strip())
+            if q.byte_length() == 0:
+                return List[Float32]()
+            return held[].embed(q)
+        except e:
+            print("console: search query:", e)
+            return List[Float32]()
+
     def _route(self, req: Request, c: Cache) raises -> Response:
         if self.page == 0:
             return overview(req, c)
         if self.page == 1:
             return repos_page(req, c)
         if self.page == 2:
-            return search(req, c)
+            return search(req, c, self._query_vector(req, c))
         if self.page == 3:
             return repo_page(req, c)
         if self.page == 4:
@@ -217,7 +258,7 @@ struct Site(Handler, Copyable):
         if self.page == 5:
             return index_json(req, c)
         if self.page == 6:
-            return search_json(req, c)
+            return search_json(req, c, self._query_vector(req, c))
         if self.page == 8:
             return migrations_page(req, c)
         if self.page == 9:
@@ -261,26 +302,29 @@ def main() raises:
     var pc = unsafe_alloc[Swap[CheckRun]](1)
     pc.unsafe_write(Swap[CheckRun](CheckRun()))
     var checks = Int(pc)
+    var pm = unsafe_alloc[Swap[QueryModel]](1)
+    pm.unsafe_write(Swap[QueryModel](QueryModel()))
+    var model = Int(pm)
     var sh = unsafe_alloc[Shared](1)
-    sh.unsafe_write(Shared(cache, checks))
+    sh.unsafe_write(Shared(cache, checks, model))
     var refresher = ThreadHandle.spawn[_refresher](OpaquePtr(unsafe_from_address=Int(sh)))
     refresher.detach()
     var r = Router()
-    r.get("/", Site(0, cache, checks))
-    r.get("/repos", Site(1, cache, checks))
-    r.get("/migrations", Site(8, cache, checks))
+    r.get("/", Site(0, cache, checks, model))
+    r.get("/repos", Site(1, cache, checks, model))
+    r.get("/migrations", Site(8, cache, checks, model))
     r.get("/versions", _moved_to_migrations)
     r.get("/how", how)
     r.get("/how/optimizations", optimizations)
     r.get("/how/changelog", changelog)
-    r.get("/search", Site(2, cache, checks))
-    r.get("/repos/:owner/:name", Site(3, cache, checks))
-    r.get("/api/overview", Site(4, cache, checks))
-    r.get("/api/repos", Site(5, cache, checks))
-    r.get("/api/versions", Site(9, cache, checks))
-    r.get("/api/search", Site(6, cache, checks))
-    r.get("/api/repos/:owner/:name", Site(7, cache, checks))
-    r.get("/checks", Site(10, cache, checks))
+    r.get("/search", Site(2, cache, checks, model))
+    r.get("/repos/:owner/:name", Site(3, cache, checks, model))
+    r.get("/api/overview", Site(4, cache, checks, model))
+    r.get("/api/repos", Site(5, cache, checks, model))
+    r.get("/api/versions", Site(9, cache, checks, model))
+    r.get("/api/search", Site(6, cache, checks, model))
+    r.get("/api/repos/:owner/:name", Site(7, cache, checks, model))
+    r.get("/checks", Site(10, cache, checks, model))
     var addr = String("0.0.0.0:", getenv("PORT", "8080"))
     var server = HttpServer.bind(SocketAddr.parse(addr), ServerConfig())
     print("console on http://", addr, sep="")

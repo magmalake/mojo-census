@@ -1,1 +1,0 @@
-- **Reruns without `--allow-append`**: four pipelines that rewrite their rows declare `replaces=`. (#111)
