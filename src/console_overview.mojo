@@ -8,7 +8,8 @@ from orca.civil import now
 from charts import compact, compact_bytes, donut, line_chart
 from days import day_text
 from jscan import micros_to_iso
-from listing import ListQuery, list_url, with_new
+from listing import ListQuery, list_url, with_category, with_new
+from categories import CATEGORIES_VERSION, VOTERS, category_keys, category_title
 from model import Stored, stored_total
 from overview import (
     ARCHIVE_START,
@@ -103,8 +104,50 @@ def _pct(part: Int, whole: Int) -> String:
     return String(tenths // 10, ".", tenths % 10, "%")
 
 
+def _categories_card(c: Cache) -> String:
+    """Repos per category (`categories.categorize`), each linking to them;
+    nothing before mojo_embed has run."""
+    if c.embed_snapshot < 0 or len(c.categories) != len(c.libs):
+        return String()
+    var per = Dict[String, Int]()
+    for ref k in c.categories:
+        if k.byte_length() > 0:
+            per[k] = per.get(k, 0) + 1
+    var total = 0
+    for e in per.items():
+        total += e.value
+    if total == 0:
+        return String()
+    var any = ListQuery(String("lines"), False, String(), False, String(), False, String())
+    var h = String(
+        "<h2>Repos by category",
+        _help(
+            "h-categories", "Repos by category",
+            String(
+                "Approximate. A repo with no description is Other; one whose description says"
+                " bindings for or a port of a library goes by that; the rest go by the ", VOTERS,
+                " nearest of 72 hand-labelled repos, by the embeddings of their descriptions"
+                " (categories v", CATEGORIES_VERSION, "). About 4 in 5 agree with a hand label.",
+            ),
+        ),
+        "</h2><div class=tbl><table><thead><tr><th>Category</th><th class=num>Repos</th>",
+        "<th class=num>Share</th></tr></thead><tbody>",
+    )
+    for ref k in category_keys():
+        var n = per.get(k, 0)
+        if n == 0:
+            continue
+        h.write(
+            "<tr><td><a href='", html_escape(list_url(with_category(any, k))), "'>",
+            html_escape(category_title(k)), "</a></td><td class=num>", _n(Int64(n)),
+            "</td><td class=num>", _pct(n, total), "</td></tr>",
+        )
+    h.write("</tbody></table></div>")
+    return h^
+
+
 def _family_url(f: String, active: Bool, estimate: Bool = False) -> String:
-    return list_url(ListQuery(String("lines"), False, f, active, String(), estimate))
+    return list_url(ListQuery(String("lines"), False, f, active, String(), estimate, String()))
 
 
 def _family_donut(c: Cache, active: Bool, estimate: Bool = False) -> String:
@@ -348,7 +391,7 @@ def overview(req: Request, c: Cache) raises -> Response:
             _kpi(
                 "Repos", String("<a href='/repos'>", _n(Int64(ov.repos)), "</a>"),
                 String(
-                    "<a href='", html_escape(list_url(with_new(ListQuery(String("lines"), False, String(), False, String(), False), String("30d")))), "'>",
+                    "<a href='", html_escape(list_url(with_new(ListQuery(String("lines"), False, String(), False, String(), False, String()), String("30d")))), "'>",
                     _signed(Int64(ov.with_history - ov.repos_30_ago)), " in 30 days</a> of the ",
                     _n(Int64(ov.with_history)), " with history",
                 ),
@@ -371,7 +414,7 @@ def overview(req: Request, c: Cache) raises -> Response:
             _kpi(
                 "Lines of Mojo",
                 String(
-                    "<a href='", html_escape(list_url(ListQuery(String("lines"), False, String(), False, String(), False))),
+                    "<a href='", html_escape(list_url(ListQuery(String("lines"), False, String(), False, String(), False, String()))),
                     "'>", compact(ov.lines), "</a>",
                 ),
                 String(_signed(ov.lines - ov.lines_30_ago), " in 30 days"),
@@ -425,6 +468,7 @@ def overview(req: Request, c: Cache) raises -> Response:
             "</p>",
             "<div class=cols>", _family_donut(c, False, estimate), _family_donut(c, True, estimate), "</div>",
             versions_note(ov, estimate),
+            _categories_card(c),
         )
         # Growth.
         if len(ov.months) >= 2:
@@ -529,7 +573,7 @@ def overview(req: Request, c: Cache) raises -> Response:
             h.write("</tbody></table></div>")
         h.write(
             "</div><div><h2><a href='",
-            html_escape(list_url(ListQuery(String("commits30"), False, String(), False, String(), False))),
+            html_escape(list_url(ListQuery(String("commits30"), False, String(), False, String(), False, String()))),
             "'>Most active</a>",
             _help(
                 "h-active", "Most active",
@@ -555,7 +599,7 @@ def overview(req: Request, c: Cache) raises -> Response:
         if len(c.depended) > 0:
             h.write(
                 "<div class=cols><div><h2><a href='",
-                html_escape(list_url(ListQuery(String("used_by"), False, String(), False, String(), False))),
+                html_escape(list_url(ListQuery(String("used_by"), False, String(), False, String(), False, String()))),
                 "'>Most depended on</a>",
                 _help(
                     "h-depended", "Most depended on",

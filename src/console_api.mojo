@@ -1,6 +1,6 @@
 """The console's JSON under `/api/`: the overview, the repos, a search, the
-migrations per month and one repo with its commits, migrations, activity and
-releases."""
+migrations per month and one repo with its commits, migrations, activity,
+releases and similar repos."""
 
 from flare.http import Request, Response, internal_error, not_found, ok_json
 
@@ -11,7 +11,9 @@ from overview import ARCHIVE_START, RISING_FORK_WEIGHT, RISING_USED_BY_WEIGHT, a
 from search import url_decode, version_bucket, version_family
 
 from console_cache import Cache
-from console_list import _matches
+from console_list import _matches, meaning_hits
+from similar import Neighbor
+from categories import CATEGORIES_VERSION
 
 
 def _q(s: String) -> String:
@@ -144,17 +146,27 @@ def overview_json(req: Request, c: Cache) raises -> Response:
     return ok_json(out)
 
 
-def search_json(req: Request, c: Cache) raises -> Response:
+def search_json(req: Request, c: Cache, qv: List[Float32] = List[Float32]()) raises -> Response:
+    """The text matches, then the repos related by meaning; each with
+    `match` (`text` or `meaning`) and, for meaning, `score` (the cosine)."""
     try:
         var q = String(url_decode(req.query_param("q")).strip())
         var out = String("[")
         if q.byte_length() > 0:
             var first = True
-            for i in _matches(q, c):
+            var hits = _matches(q, c)
+            for i in hits:
                 if not first:
                     out += ","
                 first = False
-                out += _lib_json(c.libs[i])
+                var j = _lib_json(c.libs[i], c.categories[i] if i < len(c.categories) else String())
+                out.write(String(j[byte = : j.byte_length() - 1]), ',"match":"text"}')
+            for ref r in meaning_hits(c, qv, hits):
+                if not first:
+                    out += ","
+                first = False
+                var j = _lib_json(c.libs[r.index], c.categories[r.index] if r.index < len(c.categories) else String())
+                out.write(String(j[byte = : j.byte_length() - 1]), ',"match":"meaning","score":', r.score, "}")
         out += "]"
         return ok_json(out)
     except e:
@@ -181,7 +193,7 @@ def _source_name(source: String) -> String:
     return source
 
 
-def _lib_json(l: Library) -> String:
+def _lib_json(l: Library, category: String = String()) -> String:
     return String(
         '{"repo":', _q(l.repo), ',"description":', _q(l.description),
         ',"created_at":', _q(micros_to_iso(l.created_at) if l.created_at else ""),
@@ -201,18 +213,19 @@ def _lib_json(l: Library) -> String:
         ',"state":', _q(l.state), ',"renamed_to":', _q(l.renamed_to),
         ',"declared_deps":', "null" if l.declared_deps < 0 else String(l.declared_deps),
         ',"depends_on":', _strs_json(l.depends_on), ',"used_by":', _strs_json(l.used_by),
-        ',"dependencies":', _strs_json(l.declared), "}",
+        ',"dependencies":', _strs_json(l.declared),
+        ',"category":', _q(category) if category.byte_length() > 0 else "null", "}",
     )
 
 
 def index_json(req: Request, c: Cache) raises -> Response:
     var out = String("[")
     var first = True
-    for ref l in c.libs:
+    for i in range(len(c.libs)):
         if not first:
             out += ","
         first = False
-        out += _lib_json(l)
+        out += _lib_json(c.libs[i], c.categories[i] if i < len(c.categories) else String())
     out += "]"
     return ok_json(out)
 
@@ -240,7 +253,7 @@ def repo_json(req: Request, c: Cache) raises -> Response:
         if not found:
             return not_found(req.url)
         var data = c.data(repo)
-        var out = String('{"library":', _lib_json(found.value()), ',"migrations":[')
+        var out = String('{"library":', _lib_json(found.value(), c.category_of(repo)), ',"migrations":[')
         var first = True
         for ref m in data.ms:
             if not first:
@@ -285,7 +298,17 @@ def repo_json(req: Request, c: Cache) raises -> Response:
                 "true" if x.prerelease else "false", ',"source":', _q(x.source),
                 ',"commit":', _q(x.commit), ',"mojo_version":', _q(x.mojo_version), "}",
             )
-        out += "]}"
+        out += '],"similar":['
+        first = True
+        for ref n in c.similar.get(repo, List[Neighbor]()):
+            if not first:
+                out += ","
+            first = False
+            out.write('{"repo":', _q(n.repo), ',"score":', n.score, "}")
+        out.write(
+            '],"similar_from":{"model":', _q(c.embed_model), ',"model_rev":', _q(c.embed_rev),
+            ',"snapshot":', c.embed_snapshot, ',"categories_version":', CATEGORIES_VERSION, "}}",
+        )
         return ok_json(out)
     except e:
         return internal_error(String(e))

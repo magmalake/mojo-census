@@ -28,6 +28,8 @@
 # builds on GitHub's arm64 runners (Neoverse N2, Armv9 with SVE2), and Hetzner's
 # CAX servers are Ampere Altra (Neoverse N1, Armv8.2), where those binaries die
 # with SIGILL (exit 132). Neoverse N1 code also runs on N2, V1/V2 and Graviton.
+# On amd64 CI passes x86-64-v3 (AVX2: Haswell, Zen 1 and later, which every
+# Hetzner CPX/CCX and current cloud x86 server has).
 #
 # The stages are ordered for the layer cache (CI keeps it between runs): `env`
 # is the pixi environment and depends only on pixi.toml and pixi.lock, and
@@ -132,8 +134,9 @@ COPY --from=build /src/project/.pixi/envs/default/ssl /opt/orca/ssl
 # The census's settings, and what `orca register` (no arguments) reads: every
 # pipeline in orca.toml, from ORCA_PIPELINES_DIR, with the commit and source
 # these were built from. orca.dev.toml is the dev stack's (no fills, no
-# worker pool), which it reads with ORCA_CONFIG=/opt/orca/orca.dev.toml.
-COPY --from=build /src/project/orca.toml /src/project/orca.dev.toml /opt/orca/
+# worker pool), which it reads with ORCA_CONFIG=/opt/orca/orca.dev.toml;
+# orca.lab.toml the lab stack's (ballast only).
+COPY --from=build /src/project/orca.toml /src/project/orca.dev.toml /src/project/orca.lab.toml /opt/orca/
 # The console's Changelog tab (/how/changelog) reads it.
 COPY --from=build /src/project/CHANGELOG.md /opt/orca/
 ARG ORCA_SOURCE=""

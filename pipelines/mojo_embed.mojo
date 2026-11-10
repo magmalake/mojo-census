@@ -27,8 +27,7 @@ The table is unpartitioned and rewritten whole by each commit, one
         ./build/mojo_embed run --partitions 2026-11-10
 """
 
-from std.os import getenv, makedirs, remove, setenv
-from std.os.path import exists
+from std.os import getenv, setenv
 from std.time import perf_counter_ns
 
 from encoder import Encoder
@@ -37,79 +36,19 @@ from orca.civil import now
 from orca.tables import ensure_table, scan, table
 
 from cols import col, has_col, i32_at, str_at, strs_at
-from fetch import get_bytes
 from embedtext import (
     EmbedRow,
     embed_batch,
     embed_rows,
-    fnv64,
-    hex64,
     input_hash,
     repo_input,
     vector_bytes,
 )
 from lake import REPOS, REPO_EMBEDDINGS, REPO_STATS, repo_embeddings_schema
 from replace import replace_files
+from embedmodel import DEFAULT_MODEL, ensure_model, model_rev
 
-comptime DEFAULT_MODEL = "build/models/bge-small-en-v1.5"
-comptime DEFAULT_URL = (
-    "https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/"
-    "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
-)
-"""Where a missing model is downloaded from: Hugging Face, pinned to a
-revision (MOJO_EMBED_MODEL_URL to change it)."""
-comptime DEFAULT_REV = "bbddccb7d85cc5e6"
-"""`model_rev` of DEFAULT_URL's weights; a download must hash to
-MOJO_EMBED_MODEL_REV (this by default)."""
-comptime MODEL_FILES: List[StaticString] = [
-    "config.json", "vocab.txt", "1_Pooling/config.json", "model.safetensors",
-]
 comptime BATCH = 32
-
-
-def _ensure_model(mut ctx: Ctx, dir: String) raises:
-    """Downloads the files of the model missing from `dir`, and checks that
-    downloaded weights hash to the expected revision. A directory that has
-    them all is used as it is."""
-    var missing = List[String]()
-    comptime for i in range(len(MODEL_FILES)):
-        comptime f = MODEL_FILES[i]
-        if not exists(dir + "/" + f):
-            missing.append(f)
-    if len(missing) == 0:
-        return
-    var url = getenv("MOJO_EMBED_MODEL_URL", DEFAULT_URL)
-    for ref f in missing:
-        var path = dir + "/" + f
-        var parent = String(path[byte = : path.rfind("/")])
-        makedirs(parent, exist_ok=True)
-        var t0 = perf_counter_ns()
-        # The whole body arrives before the file is opened, so a failed
-        # download leaves no file behind; the weights are checked below.
-        var body = get_bytes(url + "/" + f)
-        with open(path, "w") as out:
-            out.write_bytes(Span(body))
-        ctx.log(String(
-            "downloaded ", f, " (", len(body), " bytes) in ",
-            Float64(perf_counter_ns() - t0) / 1e9, " s",
-        ))
-    if "model.safetensors" in missing:
-        var want = getenv("MOJO_EMBED_MODEL_REV", DEFAULT_REV)
-        var got = _model_rev(dir)
-        if got != want:
-            remove(dir + "/model.safetensors")
-            raise Error(
-                url, "/model.safetensors hashes to ", got, ", expected ", want,
-                " (MOJO_EMBED_MODEL_REV); removed",
-            )
-
-
-def _model_rev(dir: String) raises -> String:
-    """A hash of the model's weights, which names the model's version."""
-    var b: List[UInt8]
-    with open(dir + "/model.safetensors", "r") as f:
-        b = f.read_bytes()
-    return hex64(fnv64(Span(b)))
 
 
 @fieldwise_init
@@ -165,8 +104,9 @@ def embed(mut ctx: Ctx, d: Day) raises -> Int:
     Returns the number of repositories embedded."""
     var dir = getenv("MOJO_EMBED_MODEL", DEFAULT_MODEL)
     var model = getenv("MOJO_EMBED_MODEL_NAME", "bge-small-en-v1.5")
-    _ensure_model(ctx, dir)
-    var rev = _model_rev(dir)
+    for ref line in ensure_model(dir):
+        ctx.log(line)
+    var rev = model_rev(dir)
     var t = ensure_table(ctx, REPO_EMBEDDINGS, repo_embeddings_schema())
 
     var texts = _texts(ctx)
@@ -261,7 +201,11 @@ comptime Embed = Step[
     Mapped,
     retries=1,
     reads=[REPOS, REPO_STATS, REPO_EMBEDDINGS],
-    writes=[REPO_EMBEDDINGS],
+    # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
+    # adding them again, so `orca backfill --rerun` needs no --allow-append.
+    # Under replaces=, an orca.tables `append` to them would replace whole
+    # partitions, other keys' rows included: keep writing through replace_files.
+    replaces=[REPO_EMBEDDINGS],
 ]
 # Daily at 07:00 UTC, an hour after mojo_stats. A day's run embeds what
 # changed since the last, so a missed day needs no catch-up.

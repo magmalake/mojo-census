@@ -10,11 +10,14 @@ from listing import (
     select_repos,
     sorted_by,
     with_active,
+    with_category,
     with_estimate,
     with_new,
     with_version,
 )
 from model import Library, day
+from categories import category_keys, category_title
+from querymodel import Related, related
 from search import search_score, url_decode
 
 from console_cache import Cache
@@ -86,7 +89,7 @@ def _list_query(req: Request) -> ListQuery:
     return parse_list_query(
         req.query_param("sort"), req.query_param("dir"),
         url_decode(req.query_param("version")), req.query_param("active"),
-        req.query_param("new"), req.query_param("estimate"),
+        req.query_param("new"), req.query_param("estimate"), req.query_param("category"),
     )
 
 
@@ -112,6 +115,8 @@ def _filter_options(q: ListQuery, c: Cache) -> String:
         if q.active and not c.active[i]:
             continue
         if q.new.byte_length() > 0 and c.news[i] & new_bit(q.new) == 0:
+            continue
+        if q.category.byte_length() > 0 and (i >= len(c.categories) or c.categories[i] != q.category):
             continue
         var bucket = c.est_buckets[i] if q.estimate else c.buckets[i]
         per[bucket] = per.get(bucket, 0) + 1
@@ -145,6 +150,32 @@ def _filter_options(q: ListQuery, c: Cache) -> String:
         "<a class='chip", " on" if q.active else "", "' href='",
         html_escape(list_url(with_active(q, True))), "'>active in the last year</a>",
     )
+    if len(c.categories) == len(c.libs) and c.embed_snapshot >= 0:
+        var cats = Dict[String, Int]()
+        var all = 0
+        for i in range(len(c.libs)):
+            if q.active and not c.active[i]:
+                continue
+            if q.new.byte_length() > 0 and c.news[i] & new_bit(q.new) == 0:
+                continue
+            var b = c.est_buckets[i] if q.estimate else c.buckets[i]
+            if q.version.byte_length() > 0 and b != q.version and (c.est_families[i] if q.estimate else c.families[i]) != q.version:
+                continue
+            cats[c.categories[i]] = cats.get(c.categories[i], 0) + 1
+            all += 1
+        h.write(
+            "<span class=label title='Approximate: by description, and the nearest of 72 hand-labelled repos'>Category</span>",
+            "<a class='chip", " on" if q.category.byte_length() == 0 else "", "' href='",
+            html_escape(list_url(with_category(q, String()))), "'>any (", all, ")</a>",
+        )
+        for ref key in category_keys():
+            var n = cats.get(key, 0)
+            if n > 0 or q.category == key:
+                h.write(
+                    "<a class='chip", " on" if q.category == key else "", "' href='",
+                    html_escape(list_url(with_category(q, key))), "'>", html_escape(category_title(key)),
+                    " (", n, ")</a>",
+                )
     h.write("<span class=label>First commit</span>")
     var news: List[String] = ["", "month", "last-month", "30d"]
     var titles: List[String] = ["any", "this month", "last month", "last 30 days"]
@@ -183,6 +214,11 @@ def _filter_chips(q: ListQuery) -> String:
             "<a class='chip on' href='", html_escape(list_url(with_new(q, String()))),
             "' aria-label='Remove the new repos filter'>", what, " &times;</a>",
         )
+    if q.category.byte_length() > 0:
+        h.write(
+            "<a class='chip on' href='", html_escape(list_url(with_category(q, String()))),
+            "' aria-label='Remove the category filter'>", html_escape(category_title(q.category)), " &times;</a>",
+        )
     h.write("</div>")
     return h^
 
@@ -194,7 +230,7 @@ def repos_page(req: Request, c: Cache) raises -> Response:
             q, c.lines, c.files, c.stars,
             c.est_buckets if q.estimate else c.buckets, c.active,
             c.est_families if q.estimate else c.families, c.news, c.commits30,
-            c.forks, c.used_by,
+            c.forks, c.used_by, c.categories,
         )
         var h = String(
             "<h1>Mojo repos</h1><p class=sub>Mojo repos, versions and growth, counted",
@@ -251,7 +287,46 @@ def _matches(query: String, c: Cache) raises -> List[Int]:
     return hits^
 
 
-def search(req: Request, c: Cache) raises -> Response:
+def meaning_hits(c: Cache, qv: List[Float32], hits: List[Int]) -> List[Related]:
+    """The repos related to the query by meaning (`querymodel.related`) that
+    aren't text matches already, as indices into `c.libs`."""
+    var out = List[Related]()
+    if len(qv) == 0:
+        return out^
+    var at = Dict[String, Int]()
+    for i in range(len(c.libs)):
+        at[c.libs[i].repo] = i
+    var skip = Dict[String, Bool]()
+    for i in hits:
+        skip[c.libs[i].repo] = True
+    for ref r in related(c.emb, qv, skip):
+        var i = at.get(c.emb.repos[r.index], -1)
+        if i >= 0:
+            out.append(Related(i, r.score))
+    return out^
+
+
+def _meaning_table(c: Cache, rel: List[Related]) -> String:
+    var h = String(
+        "<div class=tbl><table><thead><tr><th>Repo</th><th>Description</th><th>Category</th>",
+        "<th class=num>Similarity</th></tr></thead><tbody>",
+    )
+    for ref r in rel:
+        ref l = c.libs[r.index]
+        var cat = c.categories[r.index] if r.index < len(c.categories) else String()
+        h.write(
+            "<tr><td><a class=repo href='/repos/", html_escape(l.repo), "'>", html_escape(l.repo),
+            "</a></td><td class=soft>", _or_dash(l.description), "</td><td>",
+            _or_dash(category_title(cat) if cat.byte_length() > 0 else String()),
+            "</td><td class=num>", Int(r.score * 100 + 0.5), "%</td></tr>",
+        )
+    h.write("</tbody></table></div>")
+    return h^
+
+
+def search(req: Request, c: Cache, qv: List[Float32] = List[Float32]()) raises -> Response:
+    """The text matches, then (with a query vector `qv`) the repos related
+    by meaning."""
     try:
         var q = String(url_decode(req.query_param("q")).strip())
         var h = String("<h1>Search</h1>")
@@ -260,7 +335,8 @@ def search(req: Request, c: Cache) raises -> Response:
                 _empty(
                     "Search the repos",
                     "Type part of a repository name, topic or description in the box above,"
-                    " for example flare or http. Names that match best come first.",
+                    " for example flare or http, or what you're looking for, like audio"
+                    " processing. Names that match best come first, then repos related by meaning.",
                 )
             )
             return _page("Search", h^, "search")
@@ -269,10 +345,26 @@ def search(req: Request, c: Cache) raises -> Response:
             "<p class=lead>", len(hits), " ", "repo" if len(hits) == 1 else "repos",
             " matching &ldquo;", html_escape(q), "&rdquo; in the repository name, GitHub topics or description.</p>",
         )
-        if len(hits) == 0:
+        var rel = meaning_hits(c, qv, hits)
+        if len(hits) == 0 and len(rel) == 0:
             h.write(_empty("No repos match", "Try a shorter word, or part of the owner or the name."))
-        else:
+        elif len(hits) > 0:
             h.write(_libs_table(c.libs, hits, _now_days(), _list_query(req), False))
+        if len(rel) > 0:
+            h.write(
+                "<h2>Related by meaning",
+                _help(
+                    "h-meaning", "Related by meaning",
+                    String(
+                        "Repos whose name, description and topics are nearest the query by the"
+                        " cosine of their embeddings, though the words may differ: the query is"
+                        " embedded with ", html_escape(c.embed_model), " at ",
+                        html_escape(String(c.embed_rev[byte=:8]) if c.embed_rev.byte_length() > 8 else c.embed_rev),
+                        ", the model mojo_embed embeds the repos with.",
+                    ),
+                ),
+                "</h2>", _meaning_table(c, rel),
+            )
         return _page(String("Search: ", q), h^, "search", q)
     except e:
         return internal_error(String(e))
