@@ -9,9 +9,14 @@ on:
   pull_request:
 
 jobs:
-  # Build every program and run the tests, as on a laptop.
+  # Build every program and run the tests, as on a laptop: on arm64 (Hetzner's
+  # CAX) and amd64 (x86 servers and clouds).
   test:
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04-arm, ubuntu-24.04]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: prefix-dev/setup-pixi@v0.10.2
@@ -33,9 +38,23 @@ jobs:
   # rather than on AWS. Not on main: what was merged there is built when it
   # reaches dev, the branch both stacks deploy from (pull requests still
   # build it, without pushing).
+  #
+  # One per architecture, each on its own runner (no emulation), built for a
+  # baseline CPU (Dockerfile.orca, MOJO_TARGET_CPU) and pushed as
+  # <tag>-<arch>; `manifest` joins them under the tags deploys use.
   image:
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            cpu: neoverse-n1
+          - arch: amd64
+            runner: ubuntu-24.04
+            cpu: x86-64-v3
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -55,11 +74,12 @@ jobs:
           file: Dockerfile.orca
           tags: gharchive-image
           load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           build-args: |
             ORCA_SOURCE=https://github.com/${{ github.repository }}
             ORCA_COMMIT=${{ github.sha }}
+            MOJO_TARGET_CPU=${{ matrix.cpu }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -89,10 +109,10 @@ jobs:
           done
           docker logs console
           exit 1
-      # What deploy/hetzner expects in orca.mojo: ghcr.io/magmalake/orca:<tag>.
-      # Pushed from the image tested above (native arm64), on dev and tags
-      # only; pull requests build and test but never push. dev's are
-      # <short sha> and dev, a tag's <short sha> and the tag without its v.
+      # What deploy/hetzner expects in orca.mojo: ghcr.io/magmalake/orca:<tag>,
+      # pushed here as <tag>-<arch> from the image tested above, which
+      # `manifest` joins under <tag>. On dev and tags only; pull requests
+      # build and test but never push. The tags: scripts/image-tags.sh.
       # Nothing pushes latest any more: it stays at main's last image.
       - name: Log in to GHCR
         if: github.event_name == 'push'
@@ -104,22 +124,42 @@ jobs:
       - name: Push to GHCR
         if: github.event_name == 'push'
         run: |
-          tags="${GITHUB_SHA::7}"
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            tags="$tags ${GITHUB_REF_NAME#v}"
-          else
-            tags="$tags dev"
-          fi
-          for t in $tags; do
-            docker tag gharchive-image "$GHCR_IMAGE:$t"
-            docker push "$GHCR_IMAGE:$t"
+          for t in $(scripts/image-tags.sh); do
+            docker tag gharchive-image "$GHCR_IMAGE:$t-${{ matrix.arch }}"
+            docker push "$GHCR_IMAGE:$t-${{ matrix.arch }}"
+          done
+
+  # Each tag as one image for both architectures, so a server pulls its own.
+  manifest:
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GHCR_IMAGE: ghcr.io/magmalake/orca
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Join the architectures
+        run: |
+          for t in $(scripts/image-tags.sh); do
+            docker buildx imagetools create -t "$GHCR_IMAGE:$t" \
+              "$GHCR_IMAGE:$t-arm64" "$GHCR_IMAGE:$t-amd64"
+            docker buildx imagetools inspect "$GHCR_IMAGE:$t" | grep -E 'Platform: +linux/(arm64|amd64)'
           done
 
   # A tag's GitHub release, once its image is pushed: the notes are the
   # version's section of CHANGELOG.md (changes/README.md).
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [test, image]
+    needs: [test, manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
