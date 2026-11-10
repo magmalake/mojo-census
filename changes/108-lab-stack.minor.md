@@ -1,0 +1,1 @@
+- **A lab stack**: `orca.lab.toml` (ballast only) ships in the image beside `orca.dev.toml`, and pushes to a `lab` branch publish `lab` images, for a server that tests orca itself. (#108)
