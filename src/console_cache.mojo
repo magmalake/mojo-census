@@ -38,6 +38,7 @@ from overview import (
 )
 
 from console_migrations import _migrations_body
+from issues import RepoIssues, read_issues
 from similar import Embeddings, Neighbor, nearest, read_embeddings
 from categories import categorize
 
@@ -61,12 +62,15 @@ struct RepoData(Copyable, Movable):
     var ms: List[Migration]
     var rels: List[Release]
     var acts: List[MonthActivity]
+    var issues: RepoIssues
+    """Its issues and pull requests (mojo.issues), summarized."""
 
     def __init__(out self):
         self.pts = List[Point]()
         self.ms = List[Migration]()
         self.rels = List[Release]()
         self.acts = List[MonthActivity]()
+        self.issues = RepoIssues()
 
 
 struct Cache(Movable):
@@ -278,6 +282,10 @@ struct Cache(Movable):
             if e.key not in details:
                 details[e.key] = RepoData()
             details[e.key].acts = e.value.copy()
+        for e in read_issues().items():
+            if e.key not in details:
+                details[e.key] = RepoData()
+            details[e.key].issues = e.value.copy()
         self.loaded = activity_months()
         self.migrations_body = _migrations_body(rows) if len(rows) > 0 else String()
         self.version_rows = rows^

@@ -113,3 +113,11 @@ secrets = { GITHUB_TOKEN = "orca/github-token" }
 [pipelines.mojo_embed]
 memory_gb = "auto..2"
 env = { MOJO_EMBED_MODEL = "/tmp/mojo-census/models/bge-small-en-v1.5" }
+
+# Daily at 08:00 UTC, two hours after mojo_stats (they share the token's
+# hourly limit): each repository's issues and pull requests changed since
+# the last run. The first run is about 1,300 requests plus pages for the
+# long histories.
+[pipelines.mojo_issues]
+memory_gb = "auto"
+secrets = { GITHUB_TOKEN = "orca/github-token" }

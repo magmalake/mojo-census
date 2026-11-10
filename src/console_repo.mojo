@@ -1,6 +1,6 @@
 """The console's page of one repo (`/repos/<owner>/<name>`): its title block,
 lines of Mojo over time, dependencies, similar repos, stars per month,
-releases and tags, migrations and latest commits."""
+releases and tags, issues and pull requests, migrations and latest commits."""
 
 from flare.http import Request, Response, html_escape, internal_error, not_found
 from days import day_text
@@ -11,6 +11,7 @@ from overview import tool_code, unversioned
 from versions import source_label, usable
 
 from console_cache import Cache
+from issues import IssueRow, RepoIssues
 from console_how import ORCA_UI
 from console_layout import _age, _chips, _empty, _n, _now_days, _or_dash, _page, _this_month
 from console_migrations import _line_chart
@@ -142,6 +143,49 @@ def _category_stat(key: String) -> String:
             "); about 4 in 5 agree with a hand label'>approximate</span>",
         ),
     )
+
+
+def _issue_rows(rows: List[IssueRow], gh: String, pr: Bool) -> String:
+    var h = String(
+        "<div class=tbl><table><thead><tr><th>#</th><th>Title</th><th>",
+        "Opened" if pr else "Updated", "</th>", "<th>State</th>" if pr else "<th>Labels</th>",
+        "<th class=num>Comments</th></tr></thead><tbody>",
+    )
+    for ref r in rows:
+        var state = String("open")
+        if r.state != "open":
+            state = String("merged") if r.merged_at > 0 else String("closed")
+        var labels = String()
+        for i in range(min(len(r.labels), 3)):
+            labels.write(" <span class=chip>", html_escape(r.labels[i]), "</span>")
+        h.write(
+            "<tr><td class=mono><a href='", gh, "/", "pull" if pr else "issues", "/", r.number,
+            "' rel=noopener>", r.number, "</a></td><td>", html_escape(r.title), "</td><td>",
+            day(r.created_at if pr else r.updated_at), "</td><td>",
+            state if pr else (labels if labels.byte_length() > 0 else String("<span class=mute>&ndash;</span>")),
+            "</td><td class=num>", r.comments, "</td></tr>",
+        )
+    h.write("</tbody></table></div>")
+    return h^
+
+
+def _issues_section(x: RepoIssues, gh: String, embedded: Bool) -> String:
+    """Its open issues and newest pull requests (mojo_issues); nothing before
+    mojo_issues has fetched any."""
+    if x.total() == 0:
+        return String()
+    var h = String(
+        "<h2>Issues and pull requests</h2><p class=mute>",
+        _n(Int64(x.open_issues)), " open and ", _n(Int64(x.closed_issues)), " closed issues; ",
+        _n(Int64(x.open_prs)), " open, ", _n(Int64(x.merged_prs)), " merged and ",
+        _n(Int64(x.closed_prs)), " closed pull requests, from GitHub by <a href='", ORCA_UI,
+        "/pipelines/mojo_issues' rel=noopener>mojo_issues</a>.</p>",
+    )
+    if len(x.issues) > 0:
+        h.write("<h3>Open issues</h3>", _issue_rows(x.issues, gh, False))
+    if len(x.prs) > 0:
+        h.write("<h3>Pull requests</h3>", _issue_rows(x.prs, gh, True))
+    return h^
 
 
 def _short_rev(rev: String) -> String:
@@ -289,6 +333,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
                     "<p class=mute>The latest ", RELEASES_SHOWN, " of ", len(rels),
                     "; all of them are in <a href='/api/repos/", html_escape(repo), "'>the JSON</a>.</p>",
                 )
+        h.write(_issues_section(data.issues, gh, True))
         h.write("<h2>Migrations</h2>")
         if len(ms) == 0:
             h.write(_empty("No migrations recorded", "No change of Mojo version or tooling between the commits read so far."))
