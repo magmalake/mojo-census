@@ -43,9 +43,7 @@ jobs:
   #
   # One per architecture, each on its own runner (no emulation), built for a
   # baseline CPU (Dockerfile.orca, MOJO_TARGET_CPU) and pushed as
-  # <tag>-<arch>; `manifest` joins them under the tags deploys use. lab builds
-  # arm64 only: both lab machines are Arm, and it saves each lab iteration the
-  # slower amd64 build (#117).
+  # <tag>-<arch>; `manifest` joins them under the tags deploys use.
   image-arch:
     name: image (${{ matrix.arch }}, ${{ matrix.runner }}, ${{ matrix.cpu }})
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
@@ -59,8 +57,6 @@ jobs:
           - arch: amd64
             runner: ubuntu-24.04
             cpu: x86-64-v3
-        exclude:
-          - arch: ${{ github.ref == 'refs/heads/lab' && 'amd64' || 'none' }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -153,8 +149,7 @@ jobs:
     steps:
       - run: 'case "${{ needs.image-arch.result }}" in success | skipped) ;; *) exit 1 ;; esac'
 
-  # Each tag as one image for both architectures, so a server pulls its own
-  # (lab's: arm64 only, as `image-arch` builds it).
+  # Each tag as one image for both architectures, so a server pulls its own.
   manifest:
     if: github.event_name == 'push' && github.ref != 'refs/heads/main'
     needs: image-arch
@@ -174,15 +169,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Join the architectures
         run: |
-          archs="arm64 amd64"
-          [ "$GITHUB_REF" = refs/heads/lab ] && archs=arm64
           for t in $(scripts/image-tags.sh); do
-            refs=""
-            for a in $archs; do refs="$refs $GHCR_IMAGE:$t-$a"; done
-            docker buildx imagetools create -t "$GHCR_IMAGE:$t" $refs
-            for a in $archs; do
-              docker buildx imagetools inspect "$GHCR_IMAGE:$t" | grep -E "Platform: +linux/$a" || exit 1
-            done
+            docker buildx imagetools create -t "$GHCR_IMAGE:$t" \
+              "$GHCR_IMAGE:$t-arm64" "$GHCR_IMAGE:$t-amd64"
+            docker buildx imagetools inspect "$GHCR_IMAGE:$t" | grep -E 'Platform: +linux/(arm64|amd64)'
           done
 
   # A tag's GitHub release, once its image is pushed: the notes are the
