@@ -87,6 +87,13 @@ memory_gb = "auto..4"
 # add placement = "worker:bgent" to each.
 env = { DISTA_WORKER_SLOTS = "2" }
 
+[pipelines.mojo_retool]
+# Run by hand after a release that changes what the history reader records
+# (upgrade.toml's `orca backfill --rerun mojo_retool @all`): it reads every
+# repository's history again, as mojo_history does, so the same limits.
+memory_gb = "auto..4"
+env = { DISTA_WORKER_SLOTS = "2" }
+
 [pipelines.mojo_versions]
 # Learned (orca #269), at most 4 GB.
 memory_gb = "auto..4"
