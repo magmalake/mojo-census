@@ -514,24 +514,33 @@ def overview(req: Request, c: Cache) raises -> Response:
             var magic = List[Int64]()
             var pixi = List[Int64]()
             var bazel = List[Int64]()
+            var python = List[Int64]()
             for k in range(len(m)):
-                var tot = ov.tool_none[k] + ov.tool_magic[k] + ov.tool_pixi[k] + ov.tool_bazel[k]
+                var tot = (
+                    ov.tool_none[k] + ov.tool_magic[k] + ov.tool_pixi[k]
+                    + ov.tool_bazel[k] + ov.tool_python[k]
+                )
                 var t = tot if tot > 0 else Int64(1)
                 none.append(ov.tool_none[k] * 100 // t)
                 magic.append(ov.tool_magic[k] * 100 // t)
                 pixi.append(ov.tool_pixi[k] * 100 // t)
                 bazel.append(ov.tool_bazel[k] * 100 // t)
-            var tool_names: List[String] = ["none", "magic", "pixi", "bazel"]
-            var tool_colors: List[String] = ["var(--c5)", "var(--c1)", "var(--c2)", "var(--c3)"]
+                python.append(ov.tool_python[k] * 100 // t)
+            var tool_names: List[String] = ["none", "magic", "pixi", "bazel", "python"]
+            var tool_colors: List[String] = ["var(--c5)", "var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)"]
             var tool_series = List[List[Int64]]()
             tool_series.append(none^)
             tool_series.append(magic^)
             tool_series.append(pixi^)
             tool_series.append(bazel^)
+            tool_series.append(python^)
             h.write(
                 _curve_card(
                     "Tooling", m, tool_names, tool_series, tool_colors, True,
-                    "Share of repos by how they manage Mojo: no lock file or manifest, magic, pixi, or bazel.",
+                    String(
+                        "Share of repos by how they manage Mojo: no lock file or manifest, magic, pixi,",
+                        " bazel, or python (Mojo from PyPI with uv, poetry, pdm or pip).",
+                    ),
                 ),
                 "</div>",
             )

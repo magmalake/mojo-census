@@ -1,5 +1,5 @@
 """Mojo versions in one order across Modular's renumbering, and the
-tooling and version a project's manifest or lock file names.
+tooling, packaging and version a project's manifest or lock file names.
 
 Modular numbered releases 24.1 ... 24.6, 25.1 ... 25.6 (the `max` package,
 with `mojo` inside), then gave `mojo` its own package as 0.25.6, 0.25.7,
@@ -189,33 +189,194 @@ def names_mojo(text: String) -> Bool:
     return manifest_version(text).byte_length() > 0
 
 
-def tooling(
-    pixi_toml: Bool,
-    pixi_lock: Bool,
-    mojoproject: Bool,
-    magic_lock: Bool,
-    bazel: Bool = False,
-) -> String:
-    """`none`, `magic`, `pixi` or `bazel`, from which files a commit has.
+@fieldwise_init
+struct ToolFiles(Copyable, Defaultable, Movable):
+    """The files of a commit that decide its tooling (`tooling`), and what
+    its `pyproject.toml` says. Each is whether the file is at the root."""
 
-    A repository built with Bazel (`bazel`: a root `MODULE.bazel`,
-    `WORKSPACE`, `WORKSPACE.bazel` or `BUILD.bazel`) is `bazel` even if it
-    has pixi files too.
+    var bazel: Bool
+    """A root `MODULE.bazel`, `WORKSPACE`, `WORKSPACE.bazel` or `BUILD.bazel`."""
+    var magic_lock: Bool
+    var pixi_lock: Bool
+    var mojoproject: Bool
+    var pixi_toml: Bool
+    var pyproject_pixi: Bool
+    """The `pyproject.toml` has `[tool.pixi.*]` tables (pixi reads its
+    manifest from there)."""
+    var py_mojo: Bool
+    """A Python manifest (`pyproject.toml`, `requirements*.txt`) depends on
+    a Mojo package (`deps.names_mojo_pkg`)."""
+    var uv_lock: Bool
+    var poetry_lock: Bool
+    var pdm_lock: Bool
+    var pyproject_uv: Bool
+    """`[tool.uv]` in the `pyproject.toml`."""
+    var pyproject_poetry: Bool
+    """`[tool.poetry]` in the `pyproject.toml`."""
+    var pyproject_pdm: Bool
+    """`[tool.pdm]` in the `pyproject.toml`."""
 
+    def __init__(out self):
+        self.bazel = False
+        self.magic_lock = False
+        self.pixi_lock = False
+        self.mojoproject = False
+        self.pixi_toml = False
+        self.pyproject_pixi = False
+        self.py_mojo = False
+        self.uv_lock = False
+        self.poetry_lock = False
+        self.pdm_lock = False
+        self.pyproject_uv = False
+        self.pyproject_poetry = False
+        self.pyproject_pdm = False
+
+
+def is_python_tool(tool: String) -> Bool:
+    """Whether `tool` is a Python build tool `tooling` names (Mojo from
+    PyPI)."""
+    return tool == "uv" or tool == "poetry" or tool == "pdm" or tool == "pip"
+
+
+def tooling(f: ToolFiles) -> String:
+    """`none`, `bazel`, `magic`, `pixi`, `uv`, `poetry`, `pdm` or `pip`,
+    from which files a commit has.
+
+    A repository built with Bazel is `bazel` even if it has other files too.
     magic read both `mojoproject.toml` and `pixi.toml` and wrote
-    `magic.lock`; pixi writes `pixi.lock`. A lock file decides; without one
-    the manifest does."""
-    if bazel:
+    `magic.lock`; pixi writes `pixi.lock` and also reads a `pyproject.toml`
+    with `[tool.pixi]` tables. A lock file decides; without one the manifest
+    does.
+
+    The Python tools come after the conda ones, and count only when a Python
+    manifest depends on Mojo (`py_mojo`): many Mojo repositories have a
+    `pyproject.toml` for Python helper scripts only. Then a lock file
+    decides (`uv.lock`, `poetry.lock`, `pdm.lock`), else the pyproject's
+    `[tool.*]` table, else it is `pip`: Mojo from PyPI with no lock."""
+    if f.bazel:
         return "bazel"
-    if magic_lock:
+    if f.magic_lock:
         return "magic"
-    if pixi_lock:
+    if f.pixi_lock:
         return "pixi"
-    if mojoproject:
+    if f.mojoproject:
         return "magic"
-    if pixi_toml:
+    if f.pixi_toml or f.pyproject_pixi:
         return "pixi"
+    if not f.py_mojo:
+        return "none"
+    if f.uv_lock:
+        return "uv"
+    if f.poetry_lock:
+        return "poetry"
+    if f.pdm_lock:
+        return "pdm"
+    if f.pyproject_uv:
+        return "uv"
+    if f.pyproject_poetry:
+        return "poetry"
+    if f.pyproject_pdm:
+        return "pdm"
+    return "pip"
+
+
+def packaging(rattler: Bool, conda_build: Bool) -> String:
+    """`rattler`, `conda-build` or `none`: how a repository packages itself
+    for conda, from whether it has a rattler-build `recipe.yaml` or a
+    conda-build `meta.yaml` (`recipe_kind`). Both is `rattler`, the newer."""
+    if rattler:
+        return "rattler"
+    if conda_build:
+        return "conda-build"
     return "none"
+
+
+def recipe_kind(path: StringSlice) -> String:
+    """`rattler` for a `recipe.yaml`, `conda-build` for a `meta.yaml`, at the
+    root or in `recipe/`, `recipes/`, `conda/` or `conda.recipe/`; else
+    empty. Deeper recipes belong to examples or vendored code."""
+    var base = path
+    var slash = path.find("/")
+    if slash >= 0:
+        var dir = path[byte=:slash]
+        base = path[byte = slash + 1 :]
+        if "/" in base:
+            return String()
+        if not (
+            dir == "recipe" or dir == "recipes" or dir == "conda"
+            or dir == "conda.recipe"
+        ):
+            return String()
+    if base == "recipe.yaml":
+        return String("rattler")
+    if base == "meta.yaml":
+        return String("conda-build")
+    return String()
+
+
+def pyproject_tables(text: String, mut f: ToolFiles):
+    """Sets `f`'s `pyproject_pixi`, `_uv`, `_poetry` and `_pdm` from the
+    `[tool.*]` table headers of a `pyproject.toml`."""
+    f.pyproject_pixi = False
+    f.pyproject_uv = False
+    f.pyproject_poetry = False
+    f.pyproject_pdm = False
+    for line in text.split("\n"):
+        var l = line.strip()
+        if not l.startswith("[tool."):
+            continue
+        var rest = l[byte=6:]
+        # `[tool.pixi]`, `[tool.pixi.dependencies]`, but not `[tool.pixiv]`.
+        for t in ["pixi", "uv", "poetry", "pdm"]:
+            if rest.startswith(t):
+                var after = rest[byte = t.byte_length() :]
+                if after.startswith("]") or after.startswith("."):
+                    if t == "pixi":
+                        f.pyproject_pixi = True
+                    elif t == "uv":
+                        f.pyproject_uv = True
+                    elif t == "poetry":
+                        f.pyproject_poetry = True
+                    else:
+                        f.pyproject_pdm = True
+
+
+def pylock_version(text: String) -> String:
+    """The Mojo version a `uv.lock`, `poetry.lock` or `pdm.lock` resolves:
+    each lists a package as a `[[package]]` table with `name = "..."` and
+    `version = "..."` lines. The package is the first of `packages()` the
+    lock has. Empty if none."""
+    var found = Dict[String, String]()
+    var name = String()
+    var in_package = False
+    for line in text.split("\n"):
+        var l = String(line.strip())
+        if l.startswith("["):
+            # A `[package.dependencies]` sub-table ends the name/version lines.
+            in_package = l == "[[package]]"
+            name = String()
+            continue
+        if not in_package:
+            continue
+        if l.startswith("name") or l.startswith("version"):
+            var eq = l.find("=")
+            if eq < 0:
+                continue
+            var key = String(l[byte=:eq].strip())
+            var value = String(l[byte = eq + 1 :].strip())
+            if value.startswith('"') and value.endswith('"') and value.byte_length() >= 2:
+                var inner = String(value[byte = 1 : value.byte_length() - 1])
+                value = inner^
+            if key == "name":
+                name = value.lower()
+            elif key == "version" and name.byte_length() > 0 and name not in found:
+                found[name] = value
+    for pkg in packages():
+        if pkg in found:
+            var v = found.get(pkg, String())
+            if v.byte_length() > 0 and _is_digit(v.as_bytes()[0]):
+                return _version_at(v.as_bytes(), 0)
+    return String()
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +404,7 @@ def source_label(source: String) -> String:
     names mojo.commits keeps in `version_source` (`pixi.lock`, `pixi.toml`)."""
     if source == "lock" or source.endswith(".lock"):
         return String("lock file")
-    if source == "manifest" or source.endswith(".toml"):
+    if source == "manifest" or source.endswith(".toml") or source.endswith(".txt"):
         return String("manifest")
     if source == "ci":
         return String("CI")

@@ -67,8 +67,11 @@ comptime COMMITS_SCHEMA = (
     '{"id":6,"name":"mojo_files","required":true,"type":"long"},'
     '{"id":7,"name":"tooling","required":true,"type":"string"},'
     '{"id":8,"name":"mojo_version","required":false,"type":"string"},'
-    '{"id":9,"name":"version_source","required":false,"type":"string"}]}'
+    '{"id":9,"name":"version_source","required":false,"type":"string"},'
+    '{"id":10,"name":"packaging","required":false,"type":"string"}]}'
 )
+"""`packaging` came later (ensure_table adds it; rows from before read it
+as null until mojo_retool reads their history again)."""
 
 comptime MIGRATIONS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -168,11 +171,12 @@ comptime TAGS_SCHEMA = (
     '{"id":4,"name":"annotated","required":true,"type":"boolean"},'
     '{"id":5,"name":"tagged_at","required":false,"type":"timestamptz"},'
     '{"id":6,"name":"tooling","required":false,"type":"string"},'
-    '{"id":7,"name":"mojo_version","required":false,"type":"string"}]}'
+    '{"id":7,"name":"mojo_version","required":false,"type":"string"},'
+    '{"id":8,"name":"packaging","required":false,"type":"string"}]}'
 )
 """Each repository's git tags (mojo_history): the commit a tag points at
 (peeled), the tagger's date for an annotated tag or the commit's for a
-lightweight one, and the tooling and Mojo version at that commit when it
+lightweight one, and the tooling, Mojo version and packaging at that commit when it
 is on the first-parent history mojo.commits has."""
 
 comptime REPO_VERSIONS_SCHEMA = (

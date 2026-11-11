@@ -127,11 +127,12 @@ def test_parse_tags() raises:
     assert_true(tags[3].annotated)
     assert_equal(tags[3].commit, "c0ffee")
     assert_equal(tags[3].tagged_at, 1700000000 * 1_000_000)
-    var by_sha = Dict[String, Tuple[String, String]]()
-    by_sha["c0ffee"] = (String("pixi"), String("25.4.0"))
+    var by_sha = Dict[String, Tuple[String, String, String]]()
+    by_sha["c0ffee"] = (String("pixi"), String("25.4.0"), String("rattler"))
     join_tags(tags, by_sha)
     assert_equal(tags[3].tooling, "pixi")
     assert_equal(tags[3].mojo_version, "25.4.0")
+    assert_equal(tags[3].packaging, "rattler")
     assert_equal(tags[2].tooling, "")
 
 
@@ -163,6 +164,87 @@ def test_tags_of_a_real_clone() raises:
     assert_equal(h.tags.items[2].commit.byte_length(), 40)
     assert_true(h.tags.items[2].commit != h.tags.items[1].commit)
     _ = _sh(String("rm -rf '", dir, "'"))
+
+
+def _git_history(dir: String, steps: List[String]) raises -> History:
+    """A repository made in `dir` by one commit per shell step, read the
+    way `_read_history` reads a clone."""
+    var cmd = String("rm -rf '", dir, "' && git init -q '", dir, "' && cd '", dir, "'")
+    for i in range(len(steps)):
+        cmd += String(
+            " && ", steps[i], " && git add -A",
+            " && GIT_COMMITTER_DATE='", 1700000000 + i * 100, " +0000'",
+            " git -c user.name=t -c user.email=t@t commit -q --allow-empty -m s", i,
+        )
+    var r = _sh(cmd)
+    assert_equal(r[0], 0, r[1])
+    var log = _sh(String(
+        "git -C '", dir, "' -c core.quotepath=off log --first-parent",
+        " --reverse --no-renames --diff-merges=first-parent",
+        " --format='@@%H %ct' --numstat --summary HEAD",
+    ))
+    assert_equal(log[0], 0)
+    var h = History.empty("o/r")
+    _parse_log("o/r", dir, log[1], h)
+    _ = _sh(String("rm -rf '", dir, "'"))
+    return h^
+
+
+def test_python_tooling_history() raises:
+    # mojo-tokenizers' shape, step by step: a pyproject that depends on Mojo
+    # (pip, its pin), a uv.lock (uv, the locked version), a rattler recipe
+    # (packaging), then the pyproject stops depending on Mojo (none).
+    var dir = String(getenv("TMPDIR", "/tmp"), "/mojo-census-test-pytool")
+    var pyproject = String(
+        "printf '[project]\\nname = \"t\"\\ndependencies = [\\n  \"mojo>=1.2.0,<1.3\",\\n]\\n'",
+        " > pyproject.toml && printf 'def main():\\n    pass\\n' > a.mojo",
+    )
+    var uv_lock = String(
+        "printf '[[package]]\\nname = \"mojo\"\\nversion = \"1.2.1\"\\n' > uv.lock",
+    )
+    var steps: List[String] = [
+        pyproject,
+        uv_lock,
+        String("printf 'package:\\n  name: t\\n' > recipe.yaml"),
+        String("printf '[project]\\nname = \"t\"\\ndependencies = [\"numpy\"]\\n' > pyproject.toml"),
+    ]
+    var h = _git_history(dir, steps)
+    assert_equal(len(h.commits), 4)
+    assert_equal(h.commits.items[0].tooling, "pip")
+    assert_equal(h.commits.items[0].mojo_version, "1.2.0")
+    assert_equal(h.commits.items[0].version_source, "pyproject.toml")
+    assert_equal(h.commits.items[0].packaging, "none")
+    assert_equal(h.commits.items[1].tooling, "uv")
+    assert_equal(h.commits.items[1].mojo_version, "1.2.1")
+    assert_equal(h.commits.items[1].version_source, "uv.lock")
+    assert_equal(h.commits.items[2].tooling, "uv")
+    assert_equal(h.commits.items[2].packaging, "rattler")
+    assert_equal(h.commits.items[3].tooling, "none")
+    assert_equal(h.commits.items[3].packaging, "rattler")
+    var kinds = List[String]()
+    for ref m in h.migrations.items:
+        kinds.append(String(m.kind, ":", m.from_value, ">", m.to_value))
+    assert_true("tooling:none>pip" in kinds)
+    assert_true("tooling:pip>uv" in kinds)
+    assert_true("tooling:uv>none" in kinds)
+    assert_true("packaging:none>rattler" in kinds)
+    assert_true("mojo_version:1.2.0>1.2.1" in kinds)
+
+
+def test_pixi_in_pyproject_stays_pixi() raises:
+    # pixi reads its manifest from `[tool.pixi.*]`: that is pixi, not pip,
+    # with or without a uv.lock beside it.
+    var dir = String(getenv("TMPDIR", "/tmp"), "/mojo-census-test-pyproject-pixi")
+    var steps: List[String] = [
+        String(
+            "printf '[project]\\nname = \"t\"\\n[tool.pixi.dependencies]\\nmojo = \">=1.2.0,<2\"\\n'",
+            " > pyproject.toml && touch uv.lock",
+        ),
+    ]
+    var h = _git_history(dir, steps)
+    assert_equal(len(h.commits), 1)
+    assert_equal(h.commits.items[0].tooling, "pixi")
+    assert_equal(h.commits.items[0].mojo_version, "1.2.0")
 
 
 def main() raises:

@@ -246,6 +246,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
             _version_stat(l),
             _category_stat(c.category_of(repo)),
             _stat("Tooling", _or_dash(l.tooling)),
+            _stat("Packaging", _or_dash(l.packaging)),
             _stat("License", _or_dash(l.license)),
             "</div></div>",
             "<h2>Lines of Mojo</h2>", _chart(pts),
