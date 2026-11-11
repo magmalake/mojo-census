@@ -251,7 +251,11 @@ comptime Refresh = Step[
     Mapped,
     retries=1,
     reads=[REPOS],
-    writes=[REPO_STATS],
+    # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
+    # adding them again, so `orca backfill --rerun` needs no --allow-append.
+    # Under replaces=, an orca.tables `append` to them would replace whole
+    # partitions, other keys' rows included: keep writing through replace_files.
+    replaces=[REPO_STATS],
 ]
 # A `Cron` schedule fires on its own. `fills=Current` makes a fire fill the
 # partition its time falls in (the day itself, not the day before, which is

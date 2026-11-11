@@ -11,8 +11,10 @@ from overview import ARCHIVE_START, RISING_FORK_WEIGHT, RISING_USED_BY_WEIGHT, a
 from search import url_decode, version_bucket, version_family
 
 from console_cache import Cache
-from console_list import _matches
+from console_list import _matches, meaning_hits
 from similar import Neighbor
+from issues import IssueRow
+from categories import CATEGORIES_VERSION
 
 
 def _q(s: String) -> String:
@@ -103,7 +105,7 @@ def overview_json(req: Request, c: Cache) raises -> Response:
             ',"repos":', ov.repos_series[k], ',"commits":', ov.commits_series[k],
             ',"tooling":{"none":', ov.tool_none[k], ',"magic":', ov.tool_magic[k],
             ',"pixi":', ov.tool_pixi[k],
-            ',"bazel":', ov.tool_bazel[k], "}}",
+            ',"bazel":', ov.tool_bazel[k], ',"python":', ov.tool_python[k], "}}",
         )
     out += '],"rising":['
     for i in range(len(c.rising)):
@@ -145,17 +147,27 @@ def overview_json(req: Request, c: Cache) raises -> Response:
     return ok_json(out)
 
 
-def search_json(req: Request, c: Cache) raises -> Response:
+def search_json(req: Request, c: Cache, qv: List[Float32] = List[Float32]()) raises -> Response:
+    """The text matches, then the repos related by meaning; each with
+    `match` (`text` or `meaning`) and, for meaning, `score` (the cosine)."""
     try:
         var q = String(url_decode(req.query_param("q")).strip())
         var out = String("[")
         if q.byte_length() > 0:
             var first = True
-            for i in _matches(q, c):
+            var hits = _matches(q, c)
+            for i in hits:
                 if not first:
                     out += ","
                 first = False
-                out += _lib_json(c.libs[i])
+                var j = _lib_json(c.libs[i], c.categories[i] if i < len(c.categories) else String())
+                out.write(String(j[byte = : j.byte_length() - 1]), ',"match":"text"}')
+            for ref r in meaning_hits(c, qv, hits):
+                if not first:
+                    out += ","
+                first = False
+                var j = _lib_json(c.libs[r.index], c.categories[r.index] if r.index < len(c.categories) else String())
+                out.write(String(j[byte = : j.byte_length() - 1]), ',"match":"meaning","score":', r.score, "}")
         out += "]"
         return ok_json(out)
     except e:
@@ -182,7 +194,7 @@ def _source_name(source: String) -> String:
     return source
 
 
-def _lib_json(l: Library) -> String:
+def _lib_json(l: Library, category: String = String()) -> String:
     return String(
         '{"repo":', _q(l.repo), ',"description":', _q(l.description),
         ',"created_at":', _q(micros_to_iso(l.created_at) if l.created_at else ""),
@@ -191,7 +203,8 @@ def _lib_json(l: Library) -> String:
         ',"forks":', l.forks, ',"license":', _q(l.license),
         ',"size_kb":', l.size_kb, ',"commits":', l.commits,
         ',"mojo_lines":', l.mojo_lines, ',"mojo_files":', l.mojo_files,
-        ',"tooling":', _q(l.tooling), ',"mojo_version":', _q(l.mojo_version),
+        ',"tooling":', _q(l.tooling), ',"packaging":', _q(l.packaging),
+        ',"mojo_version":', _q(l.mojo_version),
         ',"version_source":', _q(_source_name(l.version_source)), ',"version_file":', _q(l.version_file),
         ',"version_estimate":', _q(l.version_estimate),
         ',"version_estimate_source":', _q("date" if l.version_estimate.byte_length() > 0 else ""),
@@ -202,18 +215,19 @@ def _lib_json(l: Library) -> String:
         ',"state":', _q(l.state), ',"renamed_to":', _q(l.renamed_to),
         ',"declared_deps":', "null" if l.declared_deps < 0 else String(l.declared_deps),
         ',"depends_on":', _strs_json(l.depends_on), ',"used_by":', _strs_json(l.used_by),
-        ',"dependencies":', _strs_json(l.declared), "}",
+        ',"dependencies":', _strs_json(l.declared),
+        ',"category":', _q(category) if category.byte_length() > 0 else "null", "}",
     )
 
 
 def index_json(req: Request, c: Cache) raises -> Response:
     var out = String("[")
     var first = True
-    for ref l in c.libs:
+    for i in range(len(c.libs)):
         if not first:
             out += ","
         first = False
-        out += _lib_json(l)
+        out += _lib_json(c.libs[i], c.categories[i] if i < len(c.categories) else String())
     out += "]"
     return ok_json(out)
 
@@ -234,6 +248,17 @@ def versions_json(req: Request, c: Cache) raises -> Response:
     return ok_json(out)
 
 
+def _issue_json(r: IssueRow) -> String:
+    return String(
+        '{"number":', r.number, ',"title":', _q(r.title), ',"state":', _q(r.state),
+        ',"labels":', _strs_json(r.labels), ',"author":', _q(r.author),
+        ',"comments":', r.comments, ',"created_at":', _q(micros_to_iso(r.created_at)),
+        ',"updated_at":', _q(micros_to_iso(r.updated_at)),
+        ',"closed_at":', _q(micros_to_iso(r.closed_at)) if r.closed_at > 0 else "null",
+        ',"merged_at":', _q(micros_to_iso(r.merged_at)) if r.merged_at > 0 else "null", "}",
+    )
+
+
 def repo_json(req: Request, c: Cache) raises -> Response:
     try:
         var repo = String(req.param("owner"), "/", req.param("name"))
@@ -241,7 +266,7 @@ def repo_json(req: Request, c: Cache) raises -> Response:
         if not found:
             return not_found(req.url)
         var data = c.data(repo)
-        var out = String('{"library":', _lib_json(found.value()), ',"migrations":[')
+        var out = String('{"library":', _lib_json(found.value(), c.category_of(repo)), ',"migrations":[')
         var first = True
         for ref m in data.ms:
             if not first:
@@ -286,7 +311,26 @@ def repo_json(req: Request, c: Cache) raises -> Response:
                 "true" if x.prerelease else "false", ',"source":', _q(x.source),
                 ',"commit":', _q(x.commit), ',"mojo_version":', _q(x.mojo_version), "}",
             )
-        out += '],"similar":['
+        ref x = data.issues
+        out.write(
+            '],"issues":{"open_issues":', x.open_issues, ',"closed_issues":', x.closed_issues,
+            ',"open_prs":', x.open_prs, ',"merged_prs":', x.merged_prs, ',"closed_prs":', x.closed_prs,
+            ',"recent_open_issues":[',
+        )
+        first = True
+        for ref r in x.issues:
+            if not first:
+                out += ","
+            first = False
+            out.write(_issue_json(r))
+        out += '],"recent_prs":['
+        first = True
+        for ref r in x.prs:
+            if not first:
+                out += ","
+            first = False
+            out.write(_issue_json(r))
+        out += ']},"similar":['
         first = True
         for ref n in c.similar.get(repo, List[Neighbor]()):
             if not first:
@@ -295,7 +339,7 @@ def repo_json(req: Request, c: Cache) raises -> Response:
             out.write('{"repo":', _q(n.repo), ',"score":', n.score, "}")
         out.write(
             '],"similar_from":{"model":', _q(c.embed_model), ',"model_rev":', _q(c.embed_rev),
-            ',"snapshot":', c.embed_snapshot, "}}",
+            ',"snapshot":', c.embed_snapshot, ',"categories_version":', CATEGORIES_VERSION, "}}",
         )
         return ok_json(out)
     except e:

@@ -31,7 +31,7 @@
 # On amd64 CI passes x86-64-v3 (AVX2: Haswell, Zen 1 and later, which every
 # Hetzner CPX/CCX and current cloud x86 server has).
 #
-# The stages are ordered for the layer cache (CI keeps it between runs): `env`
+# The stages are ordered for the layer cache (local builds; CI keeps none, #117): `env`
 # is the pixi environment and depends only on pixi.toml and pixi.lock, and
 # both `build` (the project's source) and `git` (via `curl`) start from it, so
 # a commit that changes only source reuses `pixi install` and git as they were.

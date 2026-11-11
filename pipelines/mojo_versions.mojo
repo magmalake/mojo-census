@@ -179,7 +179,11 @@ comptime Versions = Step[
     Gather,
     retries=1,
     reads=[REPOS, REPO_VERSIONS, REPO_DEPS],
-    writes=[REPO_VERSIONS, REPO_DEPS],
+    # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
+    # adding them again, so `orca backfill --rerun` needs no --allow-append.
+    # Under replaces=, an orca.tables `append` to them would replace whole
+    # partitions, other keys' rows included: keep writing through replace_files.
+    replaces=[REPO_VERSIONS, REPO_DEPS],
 ]
 # `Keyed` partitions are names read from a column of a dataset, here the
 # `repo` values of `mojo.repos`; `sensor=True` starts a run over the keys a

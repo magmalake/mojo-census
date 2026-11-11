@@ -1,0 +1,1 @@
+- **Issues and pull requests**: a daily pipeline, `mojo_issues` (08:00 UTC), keeps every census repo's issues and pull requests in `mojo.issues` from the GitHub API; each repo page lists its open issues and newest pull requests. Needs the GitHub token secret, as mojo_stats does. (#120, #127)

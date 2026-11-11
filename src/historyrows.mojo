@@ -34,6 +34,8 @@ def commit_rows(b: RecordBatch) raises -> List[CommitRow]:
         "tooling", "mojo_version", "version_source",
     ]:
         c.append(col(b, name))
+    # `packaging` came later: a batch from before has no such column.
+    var c_pack = col(b, "packaging") if has_col(b, "packaging") else -1
     for r in range(b.num_rows):
         out.append(
             CommitRow(
@@ -46,6 +48,7 @@ def commit_rows(b: RecordBatch) raises -> List[CommitRow]:
                 str_at(b.column(c[6]), r),
                 str_at(b.column(c[7]), r),
                 str_at(b.column(c[8]), r),
+                str_at(b.column(c_pack), r) if c_pack >= 0 else String(),
             )
         )
     return out^
@@ -55,7 +58,7 @@ def commits_batch(rows: List[CommitRow]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.commits`."""
     var s = commits_schema()
     var cs = List[ColumnBuilder]()
-    for i in range(9):
+    for i in range(10):
         cs.append(ColumnBuilder.of(s, i + 1))
     for ref r in rows:
         cs[0].add(Datum.string_(r.repo))
@@ -67,6 +70,7 @@ def commits_batch(rows: List[CommitRow]) raises -> RecordBatch:
         cs[6].add(Datum.string_(r.tooling))
         cs[7].add(str_or_null(r.mojo_version))
         cs[8].add(str_or_null(r.version_source))
+        cs[9].add(str_or_null(r.packaging))
     return batch_of(cs)
 
 
@@ -115,6 +119,7 @@ def tag_rows(b: RecordBatch) raises -> List[TagRow]:
         "mojo_version",
     ]:
         c.append(col(b, name))
+    var c_pack = col(b, "packaging") if has_col(b, "packaging") else -1
     for r in range(b.num_rows):
         out.append(
             TagRow(
@@ -125,6 +130,7 @@ def tag_rows(b: RecordBatch) raises -> List[TagRow]:
                 i64_at(b.column(c[4]), r),
                 str_at(b.column(c[5]), r),
                 str_at(b.column(c[6]), r),
+                str_at(b.column(c_pack), r) if c_pack >= 0 else String(),
             )
         )
     return out^
@@ -134,7 +140,7 @@ def tags_batch(rows: List[TagRow]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.tags`."""
     var s = tags_schema()
     var cs = List[ColumnBuilder]()
-    for i in range(7):
+    for i in range(8):
         cs.append(ColumnBuilder.of(s, i + 1))
     for ref r in rows:
         cs[0].add(Datum.string_(r.repo))
@@ -144,6 +150,7 @@ def tags_batch(rows: List[TagRow]) raises -> RecordBatch:
         cs[4].add(ts_or_null(r.tagged_at))
         cs[5].add(str_or_null(r.tooling))
         cs[6].add(str_or_null(r.mojo_version))
+        cs[7].add(str_or_null(r.packaging))
     return batch_of(cs)
 
 
