@@ -1,0 +1,1 @@
+- **Build on Debian**: the image's build stages start from pixi's bookworm image, like its runtime stages. (#141)
