@@ -1,9 +1,9 @@
-"""Polls every census repository's default branch every few minutes and
+"""Polls every census repository's default branch every 20 minutes and
 records new commits in mojo.live_commits, for the console's Live page.
 
 Hourly partitions from 2026-11-11T00, one run an hour at :00
 (`fills=Current`) that keeps polling until the hour ends: every
-MOJO_LIVE_POLL_S seconds (180) it asks GitHub's GraphQL API for the heads
+MOJO_LIVE_POLL_S seconds (1200) it asks GitHub's GraphQL API for the heads
 of all of `mojo.repos` (`live.heads_query`, 100 a query, 1 rate-limit point
 each), and for each repository whose head moved, its latest commits
 (`live.history_query`). The commits newer than the head seen before are
@@ -171,7 +171,7 @@ def poll(repos: List[String], mut heads: Dict[String, String]) raises -> Poll:
 def live(mut ctx: Ctx, h: Hour) raises -> Int:
     """Polls until the hour `h` ends (once, for an hour that's over).
     Returns the commits recorded."""
-    var every = Int64(Int(getenv("MOJO_LIVE_POLL_S", "180")))
+    var every = Int64(Int(getenv("MOJO_LIVE_POLL_S", "1200")))
     var end = (Int64(days_from_civil(h.year, h.month, h.day)) * 86_400 + Int64(h.hour + 1) * 3_600)
     var repos = _repos(ctx)
     var hf = _heads(ctx)

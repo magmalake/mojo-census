@@ -134,7 +134,7 @@ def live_page(d: LiveData) raises -> Response:
     if d.snapshot < 0:
         h.write(_empty(
             "No live commits yet",
-            "The poller (mojo_live) hasn't recorded any commits yet; it looks at every census repo every few minutes.",
+            "The poller (mojo_live) hasn't recorded any commits yet; it looks at every census repo every 20 minutes.",
         ))
         return _page("Live", h^, "live")
     var day_f = freshness(d.commits, (t - 86_400) * 1_000_000)
@@ -143,8 +143,8 @@ def live_page(d: LiveData) raises -> Response:
         if c.seen_at >= (t - 86_400) * 1_000_000:
             repos[c.repo] = True
     h.write(
-        "<p class=sub>Commits to census repos' default branches, a few minutes after the push.",
-        " The poller looks at every repo every 3 minutes; this page reads what it found every minute.</p>",
+        "<p class=sub>Commits to census repos' default branches, within about 20 minutes of the push.",
+        " The poller looks at every repo every 20 minutes; this page reads what it found every minute.</p>",
         "<div class=kpis>",
         "<div class=kpi><span>", day_f.n, "</span><small>commits in the last 24 h, to ", len(repos), " repos</small></div>",
         "<div class=kpi><span>", _ago(Int64(day_f.median_s)) if day_f.n > 0 else String("&ndash;"),
