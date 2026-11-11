@@ -73,6 +73,7 @@ footer{border-top:1px solid var(--border);background:var(--bg-alt);padding:24px 
 footer .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:center}
 footer p{margin:0;max-width:78ch}
 footer nav{display:flex;gap:16px;margin-left:auto}
+footer .ver{color:var(--muted);font-variant-numeric:tabular-nums}
 footer a{color:var(--muted)}footer a:hover{color:var(--text)}
 footer .notice{flex-basis:100%;max-width:none;color:var(--ember)}
 .search{flex:1;max-width:300px;min-width:0}
@@ -197,6 +198,31 @@ comptime SUBTITLE = "the Mojo ecosystem census"
 comptime SITE_URL = "https://mojourney.dev"
 comptime FEEDBACK = "https://github.com/magmalake/mojo-census/issues"
 """Where the footer's Feedback link goes."""
+
+
+def census_version() -> String:
+    """The release the console is (`1.2.0`, from CENSUS_VERSION, set on a
+    release image), else `dev <commit>` (ORCA_COMMIT), else `dev`."""
+    var raw = getenv("CENSUS_VERSION")
+    var v = String(raw[byte=1:]) if raw.startswith("v") else raw
+    if v:
+        return v
+    var c = getenv("ORCA_COMMIT")
+    if c:
+        return String("dev ", c[byte = : min(7, c.byte_length())])
+    return String("dev")
+
+
+def _version_link() -> String:
+    var v = census_version()
+    var commit = getenv("ORCA_COMMIT")
+    return String(
+        "<a class=ver href='/how/changelog' title='",
+        html_escape(String("commit ", commit) if commit else String("this build")),
+        "'>", html_escape(v), "</a>",
+    )
+
+
 comptime EDGE_CACHE = (
     "public, max-age=60, s-maxage=1800, stale-while-revalidate=60,"
     " stale-if-error=86400"
@@ -250,7 +276,7 @@ def _page(
         "<nav><a href='https://mlake.dev' rel=noopener>mlake.dev</a>",
         "<a href='", FEEDBACK, "' rel=noopener>Feedback</a>",
         "<a href='https://github.com/magmalake' rel=noopener>GitHub</a>",
-        "<a href='/api/repos'>JSON</a></nav></div></footer>", HELP_JS, "</body></html>",
+        "<a href='/api/repos'>JSON</a>", _version_link(), "</nav></div></footer>", HELP_JS, "</body></html>",
     )
     var resp = Response(status=200, reason="OK", body=List[UInt8](h.as_bytes()))
     resp.headers.set("Content-Type", "text/html; charset=utf-8")
