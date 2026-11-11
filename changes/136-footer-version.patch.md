@@ -1,0 +1,1 @@
+- **Version in the footer**: the console shows the release it runs. (#136)

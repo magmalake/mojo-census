@@ -82,6 +82,7 @@ jobs:
           build-args: |
             ORCA_SOURCE=https://github.com/${{ github.repository }}
             ORCA_COMMIT=${{ github.sha }}
+            CENSUS_VERSION=${{ github.ref_type == 'tag' && github.ref_name || '' }}
             MOJO_TARGET_CPU=${{ matrix.cpu }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
