@@ -26,6 +26,7 @@ comptime CANDIDATES = "gharchive.candidates"
 comptime REPO_HOUR = "gharchive.repo_hour"
 comptime GH_RELEASES = "gharchive.releases"
 comptime REPO_EMBEDDINGS = "mojo.repo_embeddings"
+comptime ISSUES = "mojo.issues"
 
 comptime EVENTS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -413,6 +414,32 @@ def tags_schema() raises -> Schema:
 
 def repo_versions_schema() raises -> Schema:
     return Schema.parse(REPO_VERSIONS_SCHEMA)
+
+
+comptime ISSUES_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"number","required":true,"type":"long"},'
+    '{"id":3,"name":"kind","required":true,"type":"string"},'
+    '{"id":4,"name":"state","required":true,"type":"string"},'
+    '{"id":5,"name":"title","required":true,"type":"string"},'
+    '{"id":6,"name":"labels","required":false,"type":'
+    '{"type":"list","element-id":7,"element":"string","element-required":true}},'
+    '{"id":8,"name":"author","required":false,"type":"string"},'
+    '{"id":9,"name":"comments","required":true,"type":"long"},'
+    '{"id":10,"name":"created_at","required":true,"type":"timestamptz"},'
+    '{"id":11,"name":"updated_at","required":true,"type":"timestamptz"},'
+    '{"id":12,"name":"closed_at","required":false,"type":"timestamptz"},'
+    '{"id":13,"name":"merged_at","required":false,"type":"timestamptz"},'
+    '{"id":14,"name":"fetched_at","required":true,"type":"timestamptz"}]}'
+)
+"""One row per issue or pull request of a census repository (mojo_issues),
+as GitHub had it when last fetched: `kind` is `issue` or `pr`, `state`
+`open` or `closed`. Titles only, no bodies."""
+
+
+def issues_schema() raises -> Schema:
+    return Schema.parse(ISSUES_SCHEMA)
 
 
 def repo_embeddings_schema() raises -> Schema:

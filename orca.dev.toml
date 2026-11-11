@@ -68,6 +68,10 @@ secrets = { GITHUB_TOKEN = "orca/github-token" }
 memory_gb = "auto..2"
 env = { MOJO_EMBED_MODEL = "/tmp/mojo-census/models/bge-small-en-v1.5" }
 
+[pipelines.mojo_issues]
+memory_gb = "auto"
+secrets = { GITHUB_TOKEN = "orca/github-token" }
+
 [pipelines.ballast]
 # Learned (orca #269), the subject of the test: pipelines/ballast.mojo has
 # each day's peaks. Run by hand, e.g.

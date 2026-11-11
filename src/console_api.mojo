@@ -13,6 +13,7 @@ from search import url_decode, version_bucket, version_family
 from console_cache import Cache
 from console_list import _matches, meaning_hits
 from similar import Neighbor
+from issues import IssueRow
 from categories import CATEGORIES_VERSION
 
 
@@ -247,6 +248,17 @@ def versions_json(req: Request, c: Cache) raises -> Response:
     return ok_json(out)
 
 
+def _issue_json(r: IssueRow) -> String:
+    return String(
+        '{"number":', r.number, ',"title":', _q(r.title), ',"state":', _q(r.state),
+        ',"labels":', _strs_json(r.labels), ',"author":', _q(r.author),
+        ',"comments":', r.comments, ',"created_at":', _q(micros_to_iso(r.created_at)),
+        ',"updated_at":', _q(micros_to_iso(r.updated_at)),
+        ',"closed_at":', _q(micros_to_iso(r.closed_at)) if r.closed_at > 0 else "null",
+        ',"merged_at":', _q(micros_to_iso(r.merged_at)) if r.merged_at > 0 else "null", "}",
+    )
+
+
 def repo_json(req: Request, c: Cache) raises -> Response:
     try:
         var repo = String(req.param("owner"), "/", req.param("name"))
@@ -299,7 +311,26 @@ def repo_json(req: Request, c: Cache) raises -> Response:
                 "true" if x.prerelease else "false", ',"source":', _q(x.source),
                 ',"commit":', _q(x.commit), ',"mojo_version":', _q(x.mojo_version), "}",
             )
-        out += '],"similar":['
+        ref x = data.issues
+        out.write(
+            '],"issues":{"open_issues":', x.open_issues, ',"closed_issues":', x.closed_issues,
+            ',"open_prs":', x.open_prs, ',"merged_prs":', x.merged_prs, ',"closed_prs":', x.closed_prs,
+            ',"recent_open_issues":[',
+        )
+        first = True
+        for ref r in x.issues:
+            if not first:
+                out += ","
+            first = False
+            out.write(_issue_json(r))
+        out += '],"recent_prs":['
+        first = True
+        for ref r in x.prs:
+            if not first:
+                out += ","
+            first = False
+            out.write(_issue_json(r))
+        out += ']},"similar":['
         first = True
         for ref n in c.similar.get(repo, List[Neighbor]()):
             if not first:
