@@ -1,5 +1,0 @@
-# mojo.commits' new subject column is null for the commits read before it.
-[[step]]
-id = "1.3.0-retool-subjects"
-when = "after"
-run = "orca backfill --rerun mojo_retool @all"

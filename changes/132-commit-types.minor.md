@@ -1,1 +1,0 @@
-- **Commit types**: each commit is labelled feature, fix, Mojo version, migration and so on from its subject, on the repo page and in the JSON. (#121, #132)

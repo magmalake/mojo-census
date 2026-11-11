@@ -1,1 +1,0 @@
-- **Commit subjects**: `mojo.commits` keeps each commit's subject line. (#102, #131)
