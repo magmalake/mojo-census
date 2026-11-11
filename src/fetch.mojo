@@ -610,6 +610,28 @@ def github(path: String) raises -> Reply:
     )
 
 
+def github_graphql(body: String) raises -> Reply:
+    """POST `body` (`{"query": ...}`) to GitHub's GraphQL API with the token.
+    A query's cost is in rate-limit points (`rateLimit { cost }`), from a
+    budget of its own, not the REST API's."""
+    var c = _client()
+    var bytes = List[UInt8](body.as_bytes())
+    var req = Request(method="POST", url="https://api.github.com/graphql", body=bytes^)
+    req.headers.set("User-Agent", USER_AGENT)
+    req.headers.set("Content-Type", "application/json")
+    var token = getenv("GITHUB_TOKEN")
+    if token:
+        req.headers.set("Authorization", String("Bearer ", token))
+    var resp = c.send(req)
+    return Reply(
+        resp.status,
+        resp.text(),
+        _header_int(resp, "x-ratelimit-remaining"),
+        _header_int(resp, "retry-after"),
+        _header_int(resp, "x-ratelimit-reset"),
+    )
+
+
 def raw_file(repo: String, branch: String, file: String) raises -> String:
     """A file from raw.githubusercontent.com, or "" if it isn't there. These
     requests are not part of the REST API's rate limit and send no token."""

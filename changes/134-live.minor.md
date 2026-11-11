@@ -1,0 +1,1 @@
+- **Live page**: `mojo_live` polls every census repo every 3 minutes; `/live` shows the new commits and how fresh they are. (#123, #134)

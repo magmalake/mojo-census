@@ -72,6 +72,12 @@ env = { MOJO_EMBED_MODEL = "/tmp/mojo-census/models/bge-small-en-v1.5" }
 memory_gb = "auto"
 secrets = { GITHUB_TOKEN = "orca/github-token" }
 
+# The Live page's poller: one run an hour that polls every 3 minutes, over
+# GitHub's GraphQL API (its own rate limit: about 13 points a poll).
+[pipelines.mojo_live]
+memory_gb = "auto"
+secrets = { GITHUB_TOKEN = "orca/github-token" }
+
 [pipelines.ballast]
 # Learned (orca #269), the subject of the test: pipelines/ballast.mojo has
 # each day's peaks. Run by hand, e.g.

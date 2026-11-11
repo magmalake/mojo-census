@@ -263,6 +263,7 @@ def _page(
         " autocomplete=off></form>",
         "<nav>", _nav("/repos", "Repos", section == "repos"),
         _nav("/migrations", "Migrations", section == "migrations"),
+        _nav("/live", "Live", section == "live"),
         _nav("/how", "How it works", section == "how"),
         "<span class=sep aria-hidden=true></span>",
         "<a href='https://orca.mojourney.dev' rel=noopener title='The pipelines that build this census'>orca<span class=arrow> &#8599;</span></a><a href='https://mlake.dev' rel=noopener>mlake.dev<span class=arrow> &#8599;</span></a></nav></div></header>",

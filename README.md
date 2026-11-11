@@ -173,6 +173,13 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   7 s on four arm64 cores. The model isn't in the image: a run downloads
   what `MOJO_EMBED_MODEL` lacks (133 MB) from Hugging Face, pinned to a
   revision, and checks the weights' hash (`model_rev`).
+- **`pipelines/mojo_live.mojo`**: hourly partitions (orca `Hourly`), one run
+  an hour that polls every 3 minutes until the hour ends: GitHub's GraphQL
+  API gives the default-branch heads of 100 repositories a query (1 point),
+  and each repository whose head moved gives its latest commits. The new
+  ones go to `mojo.live_commits` with the time the poll saw them, the heads
+  to `mojo.live_heads`. The console's `/live` page reads the last two days
+  of it every minute.
 - **`bin/console.mojo`**: an overview (`/`: repos, commits and lines of
   Mojo with their change over 30 days, repos per Mojo version family,
   monthly curves from `mojo.commits`, adoption of the newest version,
