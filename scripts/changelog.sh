@@ -69,6 +69,27 @@ if [ -n "$steps_files" ]; then
     ' $steps_files > "$steps"
 fi
 
+# A run step's pipeline must be registered: in orca.toml and orca.dev.toml,
+# whose [pipelines.<name>] tables are what `orca register` registers. The
+# steps already in upgrade.toml are checked too.
+missing=$(
+    { awk -F '\t' '$3 == "run" { print $1 "\t" $4 }' "$steps"
+      awk '/^id = / { id = $3; gsub(/"/, "", id) } /^run = / { r = $0; sub(/^run = "/, "", r); sub(/"$/, "", r); print id "\t" r }' upgrade.toml
+    } | while IFS="$(printf '\t')" read -r id cmd; do
+        # The pipeline is the first word after the orca subcommand that isn't a flag.
+        p=$(printf '%s\n' "$cmd" | awk '{ for (i = 3; i <= NF; i++) if ($i !~ /^-/) { print $i; exit } }')
+        [ -n "$p" ] || continue
+        for f in orca.toml orca.dev.toml; do
+            grep -q "^\[pipelines\.$p\]" "$f" || echo "step $id: $p isn't a [pipelines.$p] of $f, so it isn't registered there"
+        done
+    done
+)
+if [ -n "$missing" ]; then
+    echo "$missing" >&2
+    rm -f "$steps"
+    exit 1
+fi
+
 if [ -n "$check" ]; then
     # CI: the steps files parse and say what the deploy will accept.
     echo "changes/: $(wc -l < "$steps" | tr -d ' ') steps, all well-formed"

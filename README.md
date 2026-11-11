@@ -402,7 +402,7 @@ comment. `Dockerfile.orca` puts it in the image at `/opt/orca/orca.toml`
 (`ORCA_CONFIG`), next to the pipelines (`ORCA_PIPELINES_DIR`), so on the
 server registering is `docker exec scheduler orca register` (orca after
 0.10.0). To change a setting: edit `orca.toml`, merge, deploy the new image,
-register again. `mojo_retool` is a one-off and isn't in the file.
+register again. `mojo_retool` has no schedule and runs only by hand, but it is in the file too, so registering keeps it available for a release's upgrade steps (`upgrade.toml`).
 
 ### The dev stack
 
