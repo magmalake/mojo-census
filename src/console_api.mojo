@@ -13,6 +13,7 @@ from search import url_decode, version_bucket, version_family
 from console_cache import Cache
 from console_list import _matches, meaning_hits
 from similar import Neighbor
+from issues import IssueRow
 from categories import CATEGORIES_VERSION
 
 
@@ -104,7 +105,7 @@ def overview_json(req: Request, c: Cache) raises -> Response:
             ',"repos":', ov.repos_series[k], ',"commits":', ov.commits_series[k],
             ',"tooling":{"none":', ov.tool_none[k], ',"magic":', ov.tool_magic[k],
             ',"pixi":', ov.tool_pixi[k],
-            ',"bazel":', ov.tool_bazel[k], "}}",
+            ',"bazel":', ov.tool_bazel[k], ',"python":', ov.tool_python[k], "}}",
         )
     out += '],"rising":['
     for i in range(len(c.rising)):
@@ -202,7 +203,8 @@ def _lib_json(l: Library, category: String = String()) -> String:
         ',"forks":', l.forks, ',"license":', _q(l.license),
         ',"size_kb":', l.size_kb, ',"commits":', l.commits,
         ',"mojo_lines":', l.mojo_lines, ',"mojo_files":', l.mojo_files,
-        ',"tooling":', _q(l.tooling), ',"mojo_version":', _q(l.mojo_version),
+        ',"tooling":', _q(l.tooling), ',"packaging":', _q(l.packaging),
+        ',"mojo_version":', _q(l.mojo_version),
         ',"version_source":', _q(_source_name(l.version_source)), ',"version_file":', _q(l.version_file),
         ',"version_estimate":', _q(l.version_estimate),
         ',"version_estimate_source":', _q("date" if l.version_estimate.byte_length() > 0 else ""),
@@ -244,6 +246,17 @@ def versions_json(req: Request, c: Cache) raises -> Response:
         )
     out += "]"
     return ok_json(out)
+
+
+def _issue_json(r: IssueRow) -> String:
+    return String(
+        '{"number":', r.number, ',"title":', _q(r.title), ',"state":', _q(r.state),
+        ',"labels":', _strs_json(r.labels), ',"author":', _q(r.author),
+        ',"comments":', r.comments, ',"created_at":', _q(micros_to_iso(r.created_at)),
+        ',"updated_at":', _q(micros_to_iso(r.updated_at)),
+        ',"closed_at":', _q(micros_to_iso(r.closed_at)) if r.closed_at > 0 else "null",
+        ',"merged_at":', _q(micros_to_iso(r.merged_at)) if r.merged_at > 0 else "null", "}",
+    )
 
 
 def repo_json(req: Request, c: Cache) raises -> Response:
@@ -298,7 +311,26 @@ def repo_json(req: Request, c: Cache) raises -> Response:
                 "true" if x.prerelease else "false", ',"source":', _q(x.source),
                 ',"commit":', _q(x.commit), ',"mojo_version":', _q(x.mojo_version), "}",
             )
-        out += '],"similar":['
+        ref x = data.issues
+        out.write(
+            '],"issues":{"open_issues":', x.open_issues, ',"closed_issues":', x.closed_issues,
+            ',"open_prs":', x.open_prs, ',"merged_prs":', x.merged_prs, ',"closed_prs":', x.closed_prs,
+            ',"recent_open_issues":[',
+        )
+        first = True
+        for ref r in x.issues:
+            if not first:
+                out += ","
+            first = False
+            out.write(_issue_json(r))
+        out += '],"recent_prs":['
+        first = True
+        for ref r in x.prs:
+            if not first:
+                out += ","
+            first = False
+            out.write(_issue_json(r))
+        out += ']},"similar":['
         first = True
         for ref n in c.similar.get(repo, List[Neighbor]()):
             if not first:

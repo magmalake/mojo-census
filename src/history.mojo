@@ -1,5 +1,5 @@
-"""A repository's history: lines of Mojo, tooling and Mojo version at each
-commit, and the commits where the tooling or the version changed.
+"""A repository's history: lines of Mojo, tooling, packaging and Mojo
+version at each commit, and the commits where one of those changed.
 
 `read_history` clones the repository (bare, into `MOJO_HISTORY_WORKDIR`,
 default `$TMPDIR/mojo_history`), walks its first-parent history once with
@@ -17,7 +17,18 @@ from dista import Seq
 
 from orca.proc import capture
 from retry import backoff_ms, env_int, log_retry, nap_ms
-from versions import lock_version, manifest_version, tooling
+from deps import names_mojo_pkg
+from versions import (
+    ToolFiles,
+    lock_version,
+    manifest_version,
+    packaging,
+    pin_version,
+    pylock_version,
+    pyproject_tables,
+    recipe_kind,
+    tooling,
+)
 
 
 @fieldwise_init
@@ -37,6 +48,8 @@ struct CommitRow(Copyable, Movable):
     var tooling: String
     var mojo_version: String
     var version_source: String
+    var packaging: String
+    """`rattler`, `conda-build` or `none` (`versions.packaging`)."""
 
 
 @fieldwise_init
@@ -48,7 +61,7 @@ struct MigrationRow(Copyable, Movable):
     var sha: String
     var committed_at: Int64
     var kind: String
-    """`tooling` or `mojo_version`."""
+    """`tooling`, `packaging` or `mojo_version`."""
     var from_value: String
     var to_value: String
 
@@ -69,6 +82,8 @@ struct TagRow(Copyable, Movable):
     var tooling: String
     var mojo_version: String
     """At `commit`, when it is on the first-parent history; else empty."""
+    var packaging: String
+    """At `commit`, as `tooling`."""
 
 
 @fieldwise_init
@@ -123,7 +138,7 @@ def parse_tags(repo: String, output: String) -> List[TagRow]:
             at = Int64(Int(String(f[4]).strip())) * 1_000_000
         except:
             at = 0
-        rows.append(TagRow(repo, tag, target, annotated, at, String(), String()))
+        rows.append(TagRow(repo, tag, target, annotated, at, String(), String(), String()))
     # An insertion sort by name, so a repository's tags always come out in
     # the same order whatever order git listed them in.
     for i in range(1, len(rows)):
@@ -134,14 +149,17 @@ def parse_tags(repo: String, output: String) -> List[TagRow]:
     return rows^
 
 
-def join_tags(mut tags: List[TagRow], commits: Dict[String, Tuple[String, String]]):
-    """Fills each tag's tooling and Mojo version from the commit it points
-    at (sha -> (tooling, version))."""
+def join_tags(
+    mut tags: List[TagRow], commits: Dict[String, Tuple[String, String, String]]
+):
+    """Fills each tag's tooling, Mojo version and packaging from the commit
+    it points at (sha -> (tooling, version, packaging))."""
     for ref t in tags:
         if t.commit in commits:
-            var v = commits.get(t.commit, (String(), String()))
+            var v = commits.get(t.commit, (String(), String(), String()))
             t.tooling = v[0]
             t.mojo_version = v[1]
+            t.packaging = v[2]
 
 
 def _read_tags(repo: String, dir: String, mut out: History) raises:
@@ -153,9 +171,9 @@ def _read_tags(repo: String, dir: String, mut out: History) raises:
     if r[0] != 0:
         raise Error("git for-each-ref failed: ", r[1].strip())
     var tags = parse_tags(repo, r[1])
-    var by_sha = Dict[String, Tuple[String, String]]()
+    var by_sha = Dict[String, Tuple[String, String, String]]()
     for ref c in out.commits.items:
-        by_sha[c.sha] = (c.tooling, c.mojo_version)
+        by_sha[c.sha] = (c.tooling, c.mojo_version, c.packaging)
     join_tags(tags, by_sha)
     for ref t in tags:
         out.tags.append(t.copy())
@@ -188,6 +206,27 @@ def is_bazel_file(path: StringSlice) -> Bool:
         or path == "WORKSPACE"
         or path == "WORKSPACE.bazel"
         or path == "BUILD.bazel"
+    )
+
+
+def is_python_manifest(path: StringSlice) -> Bool:
+    """A root `pyproject.toml` or `requirements*.txt`: where a Python build
+    tool is told to install Mojo."""
+    if "/" in path:
+        return False
+    return path == "pyproject.toml" or (
+        path.startswith("requirements") and path.endswith(".txt")
+    )
+
+
+def is_tool_file(path: StringSlice) -> Bool:
+    """Whether a change to `path` can change a commit's tooling or Mojo
+    version, so the version is read again (Bazel's files only change the
+    tooling, recipes only the packaging: neither needs a read)."""
+    return (
+        path == "pixi.toml" or path == "pixi.lock" or path == "mojoproject.toml"
+        or path == "magic.lock" or path == "uv.lock" or path == "poetry.lock"
+        or path == "pdm.lock" or is_python_manifest(path)
     )
 
 
@@ -310,82 +349,168 @@ def _show(dir: String, sha: String, file: String) raises -> String:
 
 
 struct _State:
-    """The commit being read, and what is true after it: which manifest
-    and lock files exist (`pixi_toml` ... `bazel`), the running totals of
-    Mojo `lines` and `files`, and the `tool`, `version` and `source` in
-    force. Totals and files are carried from commit to commit; `_finish`
-    turns the state into a row. `touched` is whether this commit added,
-    removed or changed a manifest or lock file, which is the only time
-    the version is read again."""
+    """The commit being read, and what is true after it: which files that
+    decide the tooling exist (`f`, and the Python manifests in `py_files`),
+    how many recipes of each kind there are, the running totals of Mojo
+    `lines` and `files`, and the `tool`, `pack`, `version` and `source` in
+    force. All of it is carried from commit to commit; `_finish` turns the
+    state into a row. `touched` is whether this commit added, removed or
+    changed a file that can name the version (`is_tool_file`), the only
+    time the version is read again; `py_touched` whether it changed a Python
+    manifest, which is then read again for its Mojo dependency and its
+    `[tool.*]` tables."""
 
-    var pixi_toml: Bool
-    var pixi_lock: Bool
-    var mojoproject: Bool
-    var magic_lock: Bool
-    var bazel: Bool
+    var f: ToolFiles
+    var py_files: List[String]
+    """The Python manifests (`is_python_manifest`) that exist, in the order
+    they appeared."""
+    var rattler: Int
+    var conda_build: Int
     var touched: Bool
+    var py_touched: Bool
     var lines: Int64
     var files: Int64
     var sha: String
     var at: Int64
     var seq: Int64
     var tool: String
+    var pack: String
     var version: String
     var source: String
 
     def __init__(out self):
+        self.f = ToolFiles()
+        self.py_files = List[String]()
+        self.rattler = 0
+        self.conda_build = 0
         self.sha = String()
         self.at = 0
         self.seq = 0
         self.tool = String("none")
+        self.pack = String("none")
         self.version = String()
         self.source = String()
-        self.pixi_toml = False
-        self.pixi_lock = False
-        self.mojoproject = False
-        self.magic_lock = False
-        self.bazel = False
         self.touched = False
+        self.py_touched = False
         self.lines = 0
         self.files = 0
 
     def mark(mut self, path: String, exists: Bool):
         """Records that `path` now exists (or no longer does), if it is a
-        file that decides the tooling or the version."""
+        file that decides the tooling, the packaging or the version."""
+        var kind = recipe_kind(path)
+        if kind == "rattler":
+            self.rattler += 1 if exists else -1
+            return  # the packaging changes, nothing else
+        if kind == "conda-build":
+            self.conda_build += 1 if exists else -1
+            return
         if path == "pixi.toml":
-            self.pixi_toml = exists
+            self.f.pixi_toml = exists
         elif path == "pixi.lock":
-            self.pixi_lock = exists
+            self.f.pixi_lock = exists
         elif path == "mojoproject.toml":
-            self.mojoproject = exists
+            self.f.mojoproject = exists
         elif path == "magic.lock":
-            self.magic_lock = exists
+            self.f.magic_lock = exists
+        elif path == "uv.lock":
+            self.f.uv_lock = exists
+        elif path == "poetry.lock":
+            self.f.poetry_lock = exists
+        elif path == "pdm.lock":
+            self.f.pdm_lock = exists
+        elif is_python_manifest(path):
+            var at = -1
+            for i in range(len(self.py_files)):
+                if self.py_files[i] == path:
+                    at = i
+            if exists and at < 0:
+                self.py_files.append(path)
+            elif not exists and at >= 0:
+                _ = self.py_files.pop(at)
+            self.py_touched = True
         elif is_bazel_file(path):
-            self.bazel = exists
+            self.f.bazel = exists
             return  # the tooling changes, the Mojo version doesn't
         else:
             return
         self.touched = True
 
+    def any_file(self) -> Bool:
+        """Whether any file that can name the version is left."""
+        return (
+            self.f.pixi_toml or self.f.pixi_lock or self.f.mojoproject
+            or self.f.magic_lock or self.f.uv_lock or self.f.poetry_lock
+            or self.f.pdm_lock or len(self.py_files) > 0
+        )
+
+
+def _read_python(dir: String, sha: String, mut st: _State) raises:
+    """Reads the Python manifests at `sha` again: whether one depends on
+    Mojo (`py_mojo`), and the `pyproject.toml`'s `[tool.*]` tables."""
+    st.f.py_mojo = False
+    var pyproject = False
+    for p in st.py_files:
+        var text = _show(dir, sha, p)
+        if p == "pyproject.toml":
+            pyproject = True
+            pyproject_tables(text, st.f)
+        if names_mojo_pkg(p, text):
+            st.f.py_mojo = True
+    if not pyproject:
+        pyproject_tables(String(), st.f)
+
 
 def _version(dir: String, sha: String, st: _State) raises -> Tuple[String, String]:
     """The Mojo version at `sha` and the file it came from, or two empty
     strings. Lock files win over manifests: a lock names the version that
-    was actually resolved, a manifest only the range asked for."""
-    for lock in ["magic.lock", "pixi.lock"]:
-        if (lock == "magic.lock" and st.magic_lock) or (
-            lock == "pixi.lock" and st.pixi_lock
-        ):
-            var v = lock_version(_show(dir, sha, lock))
+    was actually resolved, a manifest only the range asked for. Python
+    files count only when a Python manifest depends on Mojo (`py_mojo`),
+    and the `pyproject.toml` also when pixi reads it."""
+    var locks = List[String]()
+    if st.f.magic_lock:
+        locks.append("magic.lock")
+    if st.f.pixi_lock:
+        locks.append("pixi.lock")
+    for l in locks:
+        var v = lock_version(_show(dir, sha, l))
+        if v.byte_length() > 0:
+            return (v^, l)
+    var pylocks = List[String]()
+    if st.f.py_mojo:
+        if st.f.uv_lock:
+            pylocks.append("uv.lock")
+        if st.f.poetry_lock:
+            pylocks.append("poetry.lock")
+        if st.f.pdm_lock:
+            pylocks.append("pdm.lock")
+    for l in pylocks:
+        var v = pylock_version(_show(dir, sha, l))
+        if v.byte_length() > 0:
+            return (v^, l)
+    var manifests = List[String]()
+    if st.f.pixi_toml:
+        manifests.append("pixi.toml")
+    if st.f.mojoproject:
+        manifests.append("mojoproject.toml")
+    for m in manifests:
+        var v = manifest_version(_show(dir, sha, m))
+        if v.byte_length() > 0:
+            return (v^, m)
+    if st.f.py_mojo or st.f.pyproject_pixi:
+        for p in st.py_files:
+            if p != "pyproject.toml" and not st.f.py_mojo:
+                continue
+            # A pixi or poetry table line (`mojo = ">=1.2"`), else a PEP 508
+            # pin (`"mojo>=1.2.0,<1.3"`).
+            var text = _show(dir, sha, p)
+            var v = manifest_version(text) if p == "pyproject.toml" else String()
+            if v.byte_length() == 0 or v == "*":
+                var pin = pin_version(text)
+                if pin.byte_length() > 0:
+                    v = pin^
             if v.byte_length() > 0:
-                return (v^, String(lock))
-    for m in ["pixi.toml", "mojoproject.toml"]:
-        if (m == "pixi.toml" and st.pixi_toml) or (
-            m == "mojoproject.toml" and st.mojoproject
-        ):
-            var v = manifest_version(_show(dir, sha, m))
-            if v.byte_length() > 0:
-                return (v^, String(m))
+                return (v^, p)
     return (String(), String())
 
 
@@ -393,16 +518,17 @@ def _finish(repo: String, dir: String, mut st: _State, mut out: History) raises:
     """Closes the commit `st` is at: one row, and any migrations."""
     if st.sha.byte_length() == 0:
         return
-    var new_tool = tooling(
-        st.pixi_toml, st.pixi_lock, st.mojoproject, st.magic_lock, st.bazel
-    )
+    if st.py_touched:
+        var sha = st.sha
+        _read_python(dir, sha, st)
+    var new_tool = tooling(st.f)
+    var new_pack = packaging(st.rattler > 0, st.conda_build > 0)
     if st.touched:
         # Only a commit that touches a manifest costs `git show`s. A manifest
         # that names no version (yet) leaves the earlier version standing; the
         # version is cleared only when no manifest or lock file is left.
         var v = _version(dir, st.sha, st)
-        var any_file = st.pixi_toml or st.pixi_lock or st.mojoproject or st.magic_lock
-        if v[0].byte_length() > 0 or not any_file:
+        if v[0].byte_length() > 0 or not st.any_file():
             if v[0] != st.version:
                 out.migrations.append(
                     MigrationRow(repo, st.sha, st.at, "mojo_version", st.version, v[0])
@@ -414,14 +540,20 @@ def _finish(repo: String, dir: String, mut st: _State, mut out: History) raises:
             MigrationRow(repo, st.sha, st.at, "tooling", st.tool, new_tool)
         )
         st.tool = new_tool
+    if new_pack != st.pack:
+        out.migrations.append(
+            MigrationRow(repo, st.sha, st.at, "packaging", st.pack, new_pack)
+        )
+        st.pack = new_pack
     out.commits.append(
         CommitRow(
             repo, st.sha, st.at, st.seq, st.lines, st.files, st.tool,
-            st.version, st.source,
+            st.version, st.source, st.pack,
         )
     )
     st.seq += 1
     st.touched = False
+    st.py_touched = False
 
 
 def _path_of(line: StringSlice) -> String:
@@ -475,8 +607,10 @@ def _parse_log(repo: String, dir: String, log: String, mut out: History) raises:
             # Binary files print "-" for both counts.
             if is_mojo_file(p) and String(cols[0]) != "-":
                 st.lines += Int64(Int(cols[0])) - Int64(Int(cols[1]))
-            if p == "pixi.toml" or p == "pixi.lock" or p == "mojoproject.toml" or p == "magic.lock":
+            if is_tool_file(p):
                 st.touched = True
+                if is_python_manifest(p):
+                    st.py_touched = True
     _finish(repo, dir, st, out)
 
 

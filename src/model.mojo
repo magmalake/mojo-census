@@ -83,6 +83,10 @@ struct Library(Copyable, Movable):
     libraries it depends on."""
     var used_by: List[String]
     """The census repositories that depend on it."""
+    var packaging: String
+    """How it packages itself for conda at its last commit (`rattler`,
+    `conda-build`, `none`); empty when its history was read before
+    packaging was."""
 
 
 @fieldwise_init
@@ -114,6 +118,15 @@ struct Migration(Copyable, Movable):
     var kind: String
     var from_value: String
     var to_value: String
+
+
+def _has_field(t: Table, name: String) -> Bool:
+    """Whether the table's current schema has a column `name`."""
+    try:
+        _ = t.metadata.schema().find_by_name(name)
+        return True
+    except:
+        return False
 
 
 def day(micros: Int64) -> String:
@@ -168,7 +181,7 @@ def libraries(mut ob: Builder) raises -> List[Library]:
                 strs_at(b, c_topics, r) if c_topics >= 0 else List[String](),
                 0, 0, 0, False, String(), String(),
                 String(), String(), String(),
-                -1, List[String](), List[String](), List[String](),
+                -1, List[String](), List[String](), List[String](), String(),
             )
             if at >= 0:
                 out[at] = lib^
@@ -180,12 +193,13 @@ def libraries(mut ob: Builder) raises -> List[Library]:
     var commits_table = try_load("mojo", "commits")
     if commits_table:
         var last_seq = Dict[String, Int64]()
-        for b in (
-            commits_table.value()
-            .scan()
-            .select(["repo", "committed_at", "seq", "mojo_lines", "mojo_files", "tooling", "mojo_version", "version_source"])
-            .to_batches()
-        ):
+        var cols: List[String] = ["repo", "committed_at", "seq", "mojo_lines", "mojo_files", "tooling", "mojo_version", "version_source"]
+        # `packaging` came later: a table mojo_history hasn't written since
+        # doesn't have it yet, and selecting it would fail.
+        var with_pack = _has_field(commits_table.value(), "packaging")
+        if with_pack:
+            cols.append("packaging")
+        for b in commits_table.value().scan().select(cols^).to_batches():
             var c_repo = col(b, "repo")
             var c_at = col(b, "committed_at")
             var c_seq = col(b, "seq")
@@ -194,6 +208,7 @@ def libraries(mut ob: Builder) raises -> List[Library]:
             var c_tool = col(b, "tooling")
             var c_ver = col(b, "mojo_version")
             var c_src = col(b, "version_source")
+            var c_pack = col(b, "packaging") if with_pack else -1
             for r in range(b.num_rows):
                 var repo = str_at(b.column(c_repo), r)
                 if repo not in index:
@@ -216,6 +231,7 @@ def libraries(mut ob: Builder) raises -> List[Library]:
                     lib.tooling = str_at(b.column(c_tool), r)
                     lib.mojo_version = str_at(b.column(c_ver), r)
                     lib.version_source = str_at(b.column(c_src), r)
+                    lib.packaging = str_at(b.column(c_pack), r) if c_pack >= 0 else String()
     # Versions the history couldn't read (no manifest), from the files at HEAD,
     # and the estimate by date.
     var heads = repo_versions()
@@ -717,7 +733,7 @@ def read_sources() raises -> Sources:
     var out = Sources()
     var names: List[String] = [
         "repos", "commits", "repo_stats", "activity", "migrations", "releases", "tags",
-        "repo_embeddings",
+        "repo_embeddings", "issues",
     ]
     for name in names:
         var t = try_load("mojo", name)

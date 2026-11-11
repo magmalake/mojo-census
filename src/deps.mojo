@@ -522,11 +522,23 @@ def requirements_deps(text: String, file: String) -> List[Dep]:
 
 def is_recipe(path: String) -> Bool:
     """Whether `path` is a recipe of the repository's own package: a
-    `recipe.yaml` at the root or in `recipe/`, `recipes/` or `conda/`."""
+    `recipe.yaml` at the root or in `recipe/`, `recipes/`, `conda/` or
+    `conda.recipe/`."""
     return (
         path == "recipe.yaml" or path == "recipe/recipe.yaml"
         or path == "recipes/recipe.yaml" or path == "conda/recipe.yaml"
+        or path == "conda.recipe/recipe.yaml"
     )
+
+
+def names_mojo_pkg(path: String, text: String) -> Bool:
+    """Whether the manifest `path` (`text`) depends on a Mojo package
+    (`toolchain`, less the `mblack` formatter): what makes a
+    `pyproject.toml` or `requirements.txt` the way a repository gets Mojo."""
+    for ref d in manifest_deps(path, text):
+        if d.relation == DEPENDS and toolchain(d.name) and norm_name(d.name) != "mblack":
+            return True
+    return False
 
 
 def manifest_deps(path: String, text: String) -> List[Dep]:

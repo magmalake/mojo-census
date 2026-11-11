@@ -85,18 +85,21 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   `mojo.repos`: each snapshot mojo_repos commits starts runs for the
   repositories it adds. Each repository is cloned in a
   dista task and its first-parent history read into `mojo.commits` (lines
-  and files of Mojo at each commit, the tooling, none → magic → pixi → bazel, and
-  the Mojo version the lock file or manifest names), `mojo.migrations`
-  (each change of tooling or Mojo version) and `mojo.tags` (each git tag:
-  the commit, annotated or not, its date, and the tooling and Mojo version
-  at that commit). A repository already in a table isn't written to it
+  and files of Mojo at each commit, the tooling (none, magic, pixi, bazel,
+  or a Python build tool that installs Mojo from PyPI: uv, poetry, pdm,
+  pip), the packaging (a rattler-build `recipe.yaml`, a conda-build
+  `meta.yaml`, or none) and the Mojo version the lock file or manifest
+  names), `mojo.migrations` (each change of tooling, packaging or Mojo
+  version) and `mojo.tags` (each git tag: the commit, annotated or not, its
+  date, and the tooling, packaging and Mojo version at that commit). A repository already in a table isn't written to it
   again; one with a history and no tags is cloned without file contents
   for its tags only, so `orca backfill --rerun mojo_history @all` fills
   `mojo.tags` for repositories read before tags were.
 - **`pipelines/mojo_retool.mojo`**: a one-off that re-reads the histories
   mojo_history already read and replaces their rows (used when `tooling`
   learned `bazel`, a root `MODULE.bazel`/`WORKSPACE`/`BUILD.bazel`, which
-  outranks pixi: `orca backfill --rerun mojo_retool @all`).
+  outranks pixi, and again for the Python build tools and `packaging`:
+  `orca backfill --rerun mojo_retool @all`).
 - **`pipelines/mojo_versions.mojo`**: keyed by repository like mojo_history
   (50 a run, a sensor on `mojo.repos`), for the repositories whose lock file
   and manifest name no Mojo version (early projects, installed with `modular
