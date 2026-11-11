@@ -193,6 +193,7 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     var c_ver = ColumnBuilder.of(cs, 8)
     var c_src = ColumnBuilder.of(cs, 9)
     var c_pack = ColumnBuilder.of(cs, 10)
+    var c_subj = ColumnBuilder.of(cs, 11)
     var m_repo = ColumnBuilder.of(ms, 1)
     var m_sha = ColumnBuilder.of(ms, 2)
     var m_at = ColumnBuilder.of(ms, 3)
@@ -252,6 +253,7 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
             c_ver.add(str_or_null(c.mojo_version))
             c_src.add(str_or_null(c.version_source))
             c_pack.add(str_or_null(c.packaging))
+            c_subj.add(str_or_null(c.subject))
         for ref m in h.migrations.items:
             m_repo.add(Datum.string_(m.repo))
             m_sha.add(Datum.string_(m.sha))
@@ -264,7 +266,7 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     # returns it instead of appending again.
     var n = len(c_repo)
     if n > 0:
-        _ = append(ctx, commits_t, [batch_of([c_repo^, c_sha^, c_at^, c_seq^, c_lines^, c_files^, c_tool^, c_ver^, c_src^, c_pack^])])
+        _ = append(ctx, commits_t, [batch_of([c_repo^, c_sha^, c_at^, c_seq^, c_lines^, c_files^, c_tool^, c_ver^, c_src^, c_pack^, c_subj^])])
     if len(m_repo) > 0:
         _ = append(ctx, migrations_t, [batch_of([m_repo^, m_sha^, m_at^, m_kind^, m_from^, m_to^])])
     var n_tags = len(t_repo)

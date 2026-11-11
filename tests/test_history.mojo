@@ -7,7 +7,7 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 from std.os import getenv
 
-from history import History, _parse_log, _read_tags, _sh, is_bazel_file, is_mojo_file, safe_repo
+from history import LOG_FORMAT, SUBJECT_MAX, History, _parse_log, _read_tags, _sh, is_bazel_file, is_mojo_file, safe_repo
 from history import CommitRow, MigrationRow, TagRow, join_tags, parse_tags
 
 
@@ -181,13 +181,41 @@ def _git_history(dir: String, steps: List[String]) raises -> History:
     var log = _sh(String(
         "git -C '", dir, "' -c core.quotepath=off log --first-parent",
         " --reverse --no-renames --diff-merges=first-parent",
-        " --format='@@%H %ct' --numstat --summary HEAD",
+        " --format='", LOG_FORMAT, "' --numstat --summary HEAD",
     ))
     assert_equal(log[0], 0)
     var h = History.empty("o/r")
     _parse_log("o/r", dir, log[1], h)
     _ = _sh(String("rm -rf '", dir, "'"))
     return h^
+
+
+def test_subjects() raises:
+    var long = String()
+    for _ in range(60):
+        long += "é_x"  # 4 bytes each: 240 in all
+    var log = String(
+        "@@aaa 1700000000 fix: a subject with  spaces\n\n",
+        "@@bbb 1700000100\n\n",
+        "@@ccc 1700000200 ", long, "\n\n",
+    )
+    var h = History.empty("o/r")
+    _parse_log("o/r", "/nonexistent", log, h)
+    assert_equal(len(h.commits), 3)
+    assert_equal(h.commits.items[0].subject, "fix: a subject with  spaces")
+    assert_equal(h.commits.items[0].committed_at, 1700000000 * 1_000_000)
+    assert_equal(h.commits.items[1].subject, "")
+    var s = h.commits.items[2].subject
+    assert_true(s.byte_length() <= SUBJECT_MAX and s.byte_length() > SUBJECT_MAX - 4)
+    assert_true(long.startswith(s))
+
+
+def test_subjects_of_a_real_clone() raises:
+    var dir = String(getenv("TMPDIR", "/tmp"), "/mojo-census-test-subjects")
+    var h = _git_history(dir, ["true", "true"])
+    assert_equal(len(h.commits), 2)
+    assert_equal(h.commits.items[0].subject, "s0")
+    assert_equal(h.commits.items[1].subject, "s1")
 
 
 def test_python_tooling_history() raises:

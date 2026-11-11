@@ -31,6 +31,24 @@ from versions import (
 )
 
 
+comptime LOG_FORMAT = "@@%H %ct %s"
+"""A commit's header line in `git log`: sha, committer time, subject."""
+comptime SUBJECT_MAX = 200
+"""Bytes of a commit subject kept (cut on a codepoint boundary)."""
+
+
+def cut_subject(s: StringSlice) -> String:
+    """`s` to at most `SUBJECT_MAX` bytes, on a codepoint boundary."""
+    if s.byte_length() <= SUBJECT_MAX:
+        return String(s)
+    var out = String()
+    for cp in s.codepoint_slices():
+        if out.byte_length() + cp.byte_length() > SUBJECT_MAX:
+            break
+        out += cp
+    return out^
+
+
 @fieldwise_init
 struct CommitRow(Copyable, Movable):
     """One commit of the first-parent history, as a row of `mojo.commits`:
@@ -50,6 +68,8 @@ struct CommitRow(Copyable, Movable):
     var version_source: String
     var packaging: String
     """`rattler`, `conda-build` or `none` (`versions.packaging`)."""
+    var subject: String
+    """The first line of the commit message, at most `SUBJECT_MAX` bytes."""
 
 
 @fieldwise_init
@@ -372,6 +392,7 @@ struct _State:
     var files: Int64
     var sha: String
     var at: Int64
+    var subject: String
     var seq: Int64
     var tool: String
     var pack: String
@@ -385,6 +406,7 @@ struct _State:
         self.conda_build = 0
         self.sha = String()
         self.at = 0
+        self.subject = String()
         self.seq = 0
         self.tool = String("none")
         self.pack = String("none")
@@ -548,7 +570,7 @@ def _finish(repo: String, dir: String, mut st: _State, mut out: History) raises:
     out.commits.append(
         CommitRow(
             repo, st.sha, st.at, st.seq, st.lines, st.files, st.tool,
-            st.version, st.source, st.pack,
+            st.version, st.source, st.pack, st.subject,
         )
     )
     st.seq += 1
@@ -573,7 +595,7 @@ def _path_of(line: StringSlice) -> String:
 
 def _parse_log(repo: String, dir: String, log: String, mut out: History) raises:
     """Turns the `git log` of `_read_history` into `out.commits` and
-    `out.migrations`. Per commit git prints the `@@sha time` header, then
+    `out.migrations`. Per commit git prints the `@@sha time subject` header, then
     its `--numstat` lines (`added<TAB>deleted<TAB>path`), then its
     `--summary` lines (` create mode ...` / ` delete mode ...`). A commit is
     therefore complete only when the next header (or the end) arrives, which
@@ -582,9 +604,12 @@ def _parse_log(repo: String, dir: String, log: String, mut out: History) raises:
     for line in log.split("\n"):
         if line.startswith("@@"):
             _finish(repo, dir, st, out)
-            var parts = String(line[byte=2:]).split(" ")
+            # `@@<sha> <time> <subject>`: the subject may have spaces of its own.
+            var head = String(line[byte=2:])
+            var parts = head.split(" ", 2)
             st.sha = String(parts[0])
             st.at = Int64(Int(parts[1])) * 1_000_000 if len(parts) > 1 else 0
+            st.subject = cut_subject(parts[2]) if len(parts) > 2 else String()
             continue
         # Files are counted from the summary (with `--no-renames` a rename is
         # a delete plus a create) and lines from numstat, so both follow the
@@ -691,7 +716,7 @@ def _read_history(repo: String, mut out: History) raises:
         String(
             "git -C '", dir, "' -c core.quotepath=off log --first-parent",
             " --reverse --no-renames --diff-merges=first-parent",
-            " --format='@@%H %ct' --numstat --summary HEAD",
+            " --format='", LOG_FORMAT, "' --numstat --summary HEAD",
         )
     )
     if log[0] != 0:
