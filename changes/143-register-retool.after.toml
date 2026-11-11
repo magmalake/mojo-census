@@ -1,5 +1,0 @@
-# 1.3.0's re-read failed where mojo_retool wasn't registered (every stack).
-[[step]]
-id = "1.3.1-retool"
-when = "after"
-run = "orca backfill --rerun mojo_retool @all"
