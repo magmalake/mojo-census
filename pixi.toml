@@ -59,11 +59,7 @@ avro-mojo = { git = "https://github.com/magmalake/avro.mojo.git", rev = "d5b26cc
 roaring-mojo = { git = "https://github.com/magmalake/roaring.mojo.git", rev = "a90a7bd30cf1c21403a29059282072e93fbeeee2" }
 hashes-mojo = { git = "https://github.com/magmalake/hashes.mojo.git", rev = "395aca597f9410bd0511df44d972f14b10a8b01d" }
 iceberg-mojo = { git = "https://github.com/magmalake/iceberg.mojo.git", rev = "bb361f975f9f56d33218850a5f3d048202a85f02" }
-<<<<<<< HEAD
-orca-mojo = { git = "https://github.com/magmalake/orca.mojo.git", rev = "f03adb58241d38309954f2de29c1d5e57072e3e4" }
-=======
-orca-mojo = { git = "https://github.com/magmalake/orca.mojo.git", rev = "bdaefcc879a33babd5379947d4cf282dc5ba5fff" }
->>>>>>> origin/main
+orca-mojo = { git = "https://github.com/magmalake/orca.mojo.git", rev = "19efe3366078b33312638a799dc7b6108c73271d" }
 # mojo_embed's sentence embeddings; brings max-core (its matmul kernels).
 encoder-mojo = { git = "https://github.com/magmalake/encoder.mojo.git", rev = "34d8651903c4a4f94d9025de15a88cd3693e2df7" }
 postgresql = ">=18.4,<19"
