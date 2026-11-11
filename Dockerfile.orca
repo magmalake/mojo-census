@@ -142,9 +142,12 @@ COPY --from=build /src/project/orca.toml /src/project/orca.dev.toml /src/project
 COPY --from=build /src/project/CHANGELOG.md /src/project/upgrade.toml /opt/orca/
 ARG ORCA_SOURCE=""
 ARG ORCA_COMMIT=""
+# The release this image is (`1.2.0`), empty for one built from a branch; the
+# console's footer shows it, else the commit.
+ARG CENSUS_VERSION=""
 ENV ORCA_CONFIG=/opt/orca/orca.toml ORCA_PIPELINES_DIR=/opt/orca/pipelines \
     CENSUS_CHANGELOG=/opt/orca/CHANGELOG.md ORCA_UPGRADE=/opt/orca/upgrade.toml \
-    ORCA_SOURCE=${ORCA_SOURCE} ORCA_COMMIT=${ORCA_COMMIT}
+    ORCA_SOURCE=${ORCA_SOURCE} ORCA_COMMIT=${ORCA_COMMIT} CENSUS_VERSION=${CENSUS_VERSION}
 ENV CONDA_PREFIX=/opt/orca LD_LIBRARY_PATH=/opt/orca/lib PATH=/opt/orca/bin:/opt/orca/pipelines:/usr/bin:/bin \
     LLVM_SYMBOLIZER_PATH=/opt/orca/libexec/llvm-symbolizer GIT_EXEC_PATH=/opt/orca/libexec/git
 ENTRYPOINT ["/opt/orca/bin/orca"]
