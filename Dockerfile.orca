@@ -38,7 +38,7 @@
 # The build arguments are declared in the stages that use them, after `env`:
 # a RUN sees every ARG declared before it, so a new ORCA_COMMIT on each commit
 # would otherwise rerun `pixi install` too.
-FROM ghcr.io/prefix-dev/pixi:0.78.0 AS env
+FROM ghcr.io/prefix-dev/pixi:0.78.0-bookworm AS env
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src/project
