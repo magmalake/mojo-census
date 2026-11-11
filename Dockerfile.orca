@@ -38,7 +38,11 @@
 # The build arguments are declared in the stages that use them, after `env`:
 # a RUN sees every ARG declared before it, so a new ORCA_COMMIT on each commit
 # would otherwise rerun `pixi install` too.
-FROM ghcr.io/prefix-dev/pixi:0.78.0 AS env
+# The bookworm variant: the stages built from `env` then link against the same
+# glibc as the debian:bookworm-slim stages they run in, and apt reaches Debian's
+# mirrors rather than archive.ubuntu.com, whose DNS failed for CI on
+# 2026-11-11 (the default tag is Ubuntu noble).
+FROM ghcr.io/prefix-dev/pixi:0.78.0-bookworm AS env
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src/project
