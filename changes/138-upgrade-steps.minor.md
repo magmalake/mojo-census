@@ -1,1 +1,0 @@
-- **Release steps**: a release's before- and after-deploy steps ship in the image as `upgrade.toml`, for deploy.sh to show and run. (#137, #138)
