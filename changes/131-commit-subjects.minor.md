@@ -1,0 +1,1 @@
+- **Commit subjects**: `mojo.commits` keeps each commit's subject line. Run `mojo_retool` after deploying. (#102, #131)

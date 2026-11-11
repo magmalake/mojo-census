@@ -3,6 +3,14 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.2.0 - 2026-11-11
+
+- **Python build tools and packaging**: tooling knows uv, poetry, pdm and pip; a new `packaging` column (rattler, conda-build). Run `mojo_retool` after deploying. (#118)
+
+- **Issues and pull requests**: a daily pipeline, `mojo_issues` (08:00 UTC), keeps every census repo's issues and pull requests in `mojo.issues` from the GitHub API; each repo page lists its open issues and newest pull requests. Needs the GitHub token secret, as mojo_stats does. (#120, #127)
+
+- **Embedding model from the bucket**: mojo_embed and the console fetch the model from the stack's bucket, copied there from Hugging Face once. (#128)
+
 ## 1.1.0 - 2026-11-10
 
 - **`mojo_embed`, repository embeddings**: a daily pipeline (07:00 UTC) writes `mojo.repo_embeddings`, a bge-small-en-v1.5 vector per repository from its description and topics, with encoder-mojo 0.1.0 on the CPU; it re-embeds only repositories whose text changed and downloads the model (133 MB) to `MOJO_EMBED_MODEL` on its first run. (#100, #103)

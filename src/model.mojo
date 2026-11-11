@@ -108,6 +108,8 @@ struct Point(Copyable, Movable):
     var sha: String
     var tooling: String
     var version: String
+    var subject: String
+    """Empty for a commit read before subjects were (#102)."""
 
 
 @fieldwise_init
@@ -556,10 +558,16 @@ def histories(repo: String = "") raises -> Dict[String, List[Point]]:
     if not exists("mojo", "commits"):
         return out^
     var seqs = Dict[String, List[Int64]]()
-    var scan = load("mojo", "commits").scan()
+    var t = load("mojo", "commits")
+    # `subject` (field 11) came later: a table from before has no such column.
+    var with_subject = t.metadata.schema().has_field(11)
+    var scan = t.scan()
     if repo.byte_length() > 0:
         scan = scan.filter(_repo_filter(repo))
-    for b in scan.select(["repo", "committed_at", "seq", "mojo_lines", "sha", "tooling", "mojo_version"]).to_batches():
+    var names: List[String] = ["repo", "committed_at", "seq", "mojo_lines", "sha", "tooling", "mojo_version"]
+    if with_subject:
+        names.append("subject")
+    for b in scan.select(names^).to_batches():
         var c_repo = col(b, "repo")
         var c_at = col(b, "committed_at")
         var c_seq = col(b, "seq")
@@ -567,6 +575,7 @@ def histories(repo: String = "") raises -> Dict[String, List[Point]]:
         var c_sha = col(b, "sha")
         var c_tool = col(b, "tooling")
         var c_ver = col(b, "mojo_version")
+        var c_subj = col(b, "subject") if with_subject else -1
         for r in range(b.num_rows):
             var name = str_at(b.column(c_repo), r)
             if name not in out:
@@ -580,6 +589,7 @@ def histories(repo: String = "") raises -> Dict[String, List[Point]]:
                     str_at(b.column(c_sha), r),
                     str_at(b.column(c_tool), r),
                     str_at(b.column(c_ver), r),
+                    str_at(b.column(c_subj), r) if c_subj >= 0 else String(),
                 )
             )
     # By seq (the scan's order is the files').
