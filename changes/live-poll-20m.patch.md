@@ -1,1 +1,0 @@
-- **Live polls every 20 minutes**: mojo_live checks the repositories three times an hour instead of every 3 minutes. (#PR)
