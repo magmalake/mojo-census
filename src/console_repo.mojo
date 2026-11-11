@@ -7,6 +7,7 @@ from days import day_text
 from model import Library, MonthActivity, Point, day
 from similar import Neighbor
 from categories import CATEGORIES_VERSION, VOTERS, category_title
+from committype import commit_type_keys, commit_type_title, commit_types, has_subjects
 from overview import tool_code, unversioned
 from versions import source_label, usable
 
@@ -355,8 +356,13 @@ def repo_page(req: Request, c: Cache) raises -> Response:
         if len(pts) == 0:
             h.write(_empty("No commits read yet", "The history pipeline hasn't reached this repository."))
         else:
+            var types = commit_types(pts, data.ms)
+            var subjects = has_subjects(pts)
+            if subjects:
+                h.write(_types_line(types))
             h.write(
                 "<div class=tbl><table><thead><tr><th>Date</th><th>Commit</th>",
+                "<th>Type</th><th>Subject</th>" if subjects else "",
                 "<th class=num>Lines of Mojo</th><th>Tooling</th><th>Mojo version</th></tr></thead><tbody>",
             )
             var i = len(pts)
@@ -367,7 +373,15 @@ def repo_page(req: Request, c: Cache) raises -> Response:
                 h.write(
                     "<tr><td>", day(p.at), "</td><td><a class=mono href='", gh, "/commit/",
                     html_escape(p.sha), "' rel=noopener>", html_escape(String(p.sha[byte=:10])),
-                    "</a></td><td class=num>", _n(p.lines), "</td><td>", _or_dash(p.tooling),
+                    "</a></td>",
+                )
+                if subjects:
+                    h.write(
+                        "<td>", commit_type_title(types[i]), "</td><td>",
+                        html_escape(p.subject), "</td>",
+                    )
+                h.write(
+                    "<td class=num>", _n(p.lines), "</td><td>", _or_dash(p.tooling),
                     "</td><td class=mono>", _or_dash(p.version), "</td></tr>",
                 )
             h.write("</tbody></table></div>")
@@ -379,3 +393,31 @@ def repo_page(req: Request, c: Cache) raises -> Response:
         return _page(repo, h^, "repos")
     except e:
         return internal_error(String(e))
+
+
+def _types_line(types: List[String]) -> String:
+    """`Feature 40% · Fix 20% · ...` over the commits with a subject."""
+    var counts = Dict[String, Int]()
+    var n = 0
+    for ref t in types:
+        if t.byte_length() > 0:
+            counts[t] = counts.get(t, 0) + 1
+            n += 1
+    if n == 0:
+        return String()
+    var out = String(
+        "<p class=sub><span title='From each commit&#39;s subject, by rules: a conventional",
+        " prefix (fix:, feat:), a Mojo version change, else its first word. Approximate.'>",
+        "Commit types</span>: ",
+    )
+    var first = True
+    for ref k in commit_type_keys():
+        var c = counts.get(k, 0)
+        if c == 0:
+            continue
+        if not first:
+            out += " &middot; "
+        first = False
+        out.write(commit_type_title(k), " ", (c * 100 + n // 2) // n, "%")
+    out += "</p>"
+    return out^
