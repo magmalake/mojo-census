@@ -21,3 +21,5 @@ jobs:
           run-install: false
       - run: pixi global install --channel https://mojoshelf.org/channel mojoshelf
       - run: shelf changes check
+      # The release steps beside the fragments (changes/README.md).
+      - run: sh scripts/changelog.sh --check

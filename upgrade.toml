@@ -1,0 +1,34 @@
+# What a deploy of each release needs done before or after it, for deploy.sh
+# (orca.mojo#323): the image ships this file as /opt/orca/upgrade.toml, and a
+# deploy from one release to a later one shows the steps of every release in
+# between: a `manual` step is confirmed by hand, a `run` step (an orca command)
+# is run in the scheduler after the pipelines are registered.
+#
+# Written by scripts/changelog.sh from changes/*.after.toml (changes/README.md);
+# newest release first.
+
+[[version]]
+version = "1.2.0"
+
+[[version.step]]
+id = "1.2.0-retool"
+when = "after"
+run = "orca backfill --rerun mojo_retool @all"
+
+[[version.step]]
+id = "1.2.0-issues-first-run"
+when = "after"
+manual = "mojo_issues runs daily at 08:00 UTC; its first run reads every repo's whole issue history. To fill it now: orca backfill mojo_issues <today>."
+
+[[version]]
+version = "1.1.0"
+
+[[version.step]]
+id = "1.1.0-egress-hf"
+when = "before"
+manual = "The console and mojo_embed download their model from huggingface.co (133 MB, once): allow outbound HTTPS to it, and about 300 MB more memory for the console."
+
+[[version.step]]
+id = "1.1.0-embed-first-run"
+when = "after"
+manual = "mojo_embed first runs at 07:00 UTC; until then similar repos, categories and search by meaning are hidden. To fill them now: orca backfill mojo_embed <today>."

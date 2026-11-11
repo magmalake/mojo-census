@@ -16,6 +16,23 @@ a bullet for each. The level comes from the file name (`.patch.md`,
 `.minor.md`, `.breaking.md`; none is a patch). CI runs `shelf changes check`:
 a PR that changes code needs a fragment, unless it's labelled `no-changelog`.
 
+A change that needs something done around its deploy (a backfill after it,
+a check before it) adds its steps beside the fragment, as
+`changes/<pr>-<slug>.after.toml`; steps that belong to the release rather than
+to one PR go in `changes/release.after.toml`:
+
+```toml
+[[step]]
+id = "1.3.0-retool-subjects"     # unique and stable: a release's steps are shown once
+when = "after"                   # before (checked before the new image starts) or after
+run = "orca backfill --rerun mojo_retool @all"   # an orca command, run in the scheduler
+# or: manual = "What to do or check, for a person."
+```
+
+One `key = "value"` per line. The release writes them into `upgrade.toml`
+(shipped in the image for deploy.sh, orca.mojo#323) and into the version's
+changelog section, under "Before deploying" and "After deploying".
+
 The census isn't a tin, so `shelf release` doesn't release it. A release is a
 PR that runs
 
