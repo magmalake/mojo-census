@@ -6,6 +6,7 @@ from flare.http import Request, Response, internal_error, not_found, ok_json
 
 from days import day_text
 from jscan import micros_to_iso
+from committype import commit_types
 from model import Library, stored_total
 from overview import ARCHIVE_START, RISING_FORK_WEIGHT, RISING_USED_BY_WEIGHT, archive_days_due
 from search import url_decode, version_bucket, version_family
@@ -278,14 +279,17 @@ def repo_json(req: Request, c: Cache) raises -> Response:
             )
         out += '],"commits":['
         first = True
-        for ref p in data.pts:
+        var types = commit_types(data.pts, data.ms)
+        for i in range(len(data.pts)):
+            ref p = data.pts[i]
             if not first:
                 out += ","
             first = False
             out.write(
                 '{"at":', _q(micros_to_iso(p.at)), ',"sha":', _q(p.sha),
                 ',"mojo_lines":', p.lines, ',"tooling":', _q(p.tooling),
-                ',"mojo_version":', _q(p.version), "}",
+                ',"mojo_version":', _q(p.version), ',"subject":', _q(p.subject),
+                ',"type":', _q(types[i]), "}",
             )
         out += '],"activity":['
         first = True
