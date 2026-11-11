@@ -27,6 +27,8 @@ comptime REPO_HOUR = "gharchive.repo_hour"
 comptime GH_RELEASES = "gharchive.releases"
 comptime REPO_EMBEDDINGS = "mojo.repo_embeddings"
 comptime ISSUES = "mojo.issues"
+comptime LIVE_COMMITS = "mojo.live_commits"
+comptime LIVE_HEADS = "mojo.live_heads"
 
 comptime EVENTS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -441,6 +443,35 @@ as GitHub had it when last fetched: `kind` is `issue` or `pr`, `state`
 
 def issues_schema() raises -> Schema:
     return Schema.parse(ISSUES_SCHEMA)
+
+
+comptime LIVE_COMMITS_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"sha","required":true,"type":"string"},'
+    '{"id":3,"name":"subject","required":false,"type":"string"},'
+    '{"id":4,"name":"committed_at","required":true,"type":"timestamptz"},'
+    '{"id":5,"name":"seen_at","required":true,"type":"timestamptz"}]}'
+)
+"""Commits to census repos' default branches as the live poller (mojo_live)
+saw them: appended a poll at a time, newest last."""
+
+comptime LIVE_HEADS_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"head","required":false,"type":"string"},'
+    '{"id":3,"name":"seen_at","required":true,"type":"timestamptz"}]}'
+)
+"""Each census repo's default-branch head at the poller's last look,
+rewritten whole by a poll that saw one move."""
+
+
+def live_commits_schema() raises -> Schema:
+    return Schema.parse(LIVE_COMMITS_SCHEMA)
+
+
+def live_heads_schema() raises -> Schema:
+    return Schema.parse(LIVE_HEADS_SCHEMA)
 
 
 def repo_embeddings_schema() raises -> Schema:
