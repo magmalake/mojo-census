@@ -28,7 +28,7 @@ comptime CUT = 100 * DAY
 
 
 def _pt(day: Int64, lines: Int64) -> Point:
-    return Point(day * DAY, lines, String("sha"), String(), String(), String())
+    return Point(day * DAY, lines, String("sha"), String(), String(), String(), String())
 
 
 def _repo(

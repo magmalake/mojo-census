@@ -14,6 +14,8 @@ from std.os import getenv
 
 from dista import Seq
 
+from filemix import FileMix
+
 from command import STDERR_DROP, STDERR_MERGE, TIMED_OUT, git, make_dirs, remove_tree
 from retry import backoff_ms, env_int, log_retry, nap_ms
 from deps import names_mojo_pkg
@@ -69,6 +71,9 @@ struct CommitRow(Copyable, Movable):
     """`rattler`, `conda-build` or `none` (`versions.packaging`)."""
     var subject: String
     """The first line of the commit message, at most `SUBJECT_MAX` bytes."""
+    var changes: String
+    """What kinds of files it changed and how much (`FileMix.encode`); empty
+    for a row read before #121's file mix."""
 
 
 @fieldwise_init
@@ -360,6 +365,8 @@ struct _State:
     var pack: String
     var version: String
     var source: String
+    var mix: FileMix
+    """This commit's files (`filemix`); reset at each commit."""
 
     def __init__(out self):
         self.f = ToolFiles()
@@ -378,6 +385,7 @@ struct _State:
         self.py_touched = False
         self.lines = 0
         self.files = 0
+        self.mix = FileMix()
 
     def mark(mut self, path: String, exists: Bool):
         """Records that `path` now exists (or no longer does), if it is a
@@ -532,9 +540,10 @@ def _finish(repo: String, dir: String, mut st: _State, mut out: History) raises:
     out.commits.append(
         CommitRow(
             repo, st.sha, st.at, st.seq, st.lines, st.files, st.tool,
-            st.version, st.source, st.pack, st.subject,
+            st.version, st.source, st.pack, st.subject, st.mix.encode(),
         )
     )
+    st.mix = FileMix()
     st.seq += 1
     st.touched = False
     st.py_touched = False
@@ -577,6 +586,7 @@ def _parse_log(repo: String, dir: String, log: String, mut out: History) raises:
         # a delete plus a create) and lines from numstat, so both follow the
         # running totals without ever listing a tree.
         if line.startswith(" create mode "):
+            st.mix.created()
             var p = _path_of(line)
             if is_mojo_file(p):
                 st.files += 1
@@ -592,6 +602,9 @@ def _parse_log(repo: String, dir: String, log: String, mut out: History) raises:
         if len(cols) == 3:
             var p = String(cols[2])
             # Binary files print "-" for both counts.
+            var plus = Int64(Int(cols[0])) if String(cols[0]) != "-" else Int64(0)
+            var minus = Int64(Int(cols[1])) if String(cols[1]) != "-" else Int64(0)
+            st.mix.add(p, plus, minus)
             if is_mojo_file(p) and String(cols[0]) != "-":
                 st.lines += Int64(Int(cols[0])) - Int64(Int(cols[1]))
             if is_tool_file(p):

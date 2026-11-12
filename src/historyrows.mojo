@@ -37,6 +37,7 @@ def commit_rows(b: RecordBatch) raises -> List[CommitRow]:
     # `packaging` came later: a batch from before has no such column.
     var c_pack = col(b, "packaging") if has_col(b, "packaging") else -1
     var c_subj = col(b, "subject") if has_col(b, "subject") else -1
+    var c_chg = col(b, "changes") if has_col(b, "changes") else -1
     for r in range(b.num_rows):
         out.append(
             CommitRow(
@@ -51,6 +52,7 @@ def commit_rows(b: RecordBatch) raises -> List[CommitRow]:
                 str_at(b.column(c[8]), r),
                 str_at(b.column(c_pack), r) if c_pack >= 0 else String(),
                 str_at(b.column(c_subj), r) if c_subj >= 0 else String(),
+                str_at(b.column(c_chg), r) if c_chg >= 0 else String(),
             )
         )
     return out^
@@ -60,7 +62,7 @@ def commits_batch(rows: List[CommitRow]) raises -> RecordBatch:
     """`rows` as a batch of `mojo.commits`."""
     var s = commits_schema()
     var cs = List[ColumnBuilder]()
-    for i in range(11):
+    for i in range(12):
         cs.append(ColumnBuilder.of(s, i + 1))
     for ref r in rows:
         cs[0].add(Datum.string_(r.repo))
@@ -74,6 +76,7 @@ def commits_batch(rows: List[CommitRow]) raises -> RecordBatch:
         cs[8].add(str_or_null(r.version_source))
         cs[9].add(str_or_null(r.packaging))
         cs[10].add(str_or_null(r.subject))
+        cs[11].add(str_or_null(r.changes))
     return batch_of(cs)
 
 

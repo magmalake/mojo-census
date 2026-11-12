@@ -72,10 +72,12 @@ comptime COMMITS_SCHEMA = (
     '{"id":8,"name":"mojo_version","required":false,"type":"string"},'
     '{"id":9,"name":"version_source","required":false,"type":"string"},'
     '{"id":10,"name":"packaging","required":false,"type":"string"},'
-    '{"id":11,"name":"subject","required":false,"type":"string"}]}'
+    '{"id":11,"name":"subject","required":false,"type":"string"},'
+    '{"id":12,"name":"changes","required":false,"type":"string"}]}'
 )
-"""`packaging` and `subject` came later (ensure_table adds them; rows from
-before read them as null until mojo_retool reads their history again)."""
+"""`packaging`, `subject` and `changes` (`filemix.FileMix.encode`, #121)
+came later (ensure_table adds them; rows from before read them as null until
+mojo_retool reads their history again)."""
 
 comptime MIGRATIONS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
