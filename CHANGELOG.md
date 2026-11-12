@@ -3,6 +3,18 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.3.1 - 2026-11-12
+
+- **mojo_retool registered**: the upgrade step that re-reads every history works; 1.3.0's failed with "pipeline mojo_retool isn't registered". (#143)
+
+- **Live polls every 20 minutes**: mojo_live checks the repositories three times an hour instead of every 3 minutes. (#144)
+
+- **orca 0.24.0**: the census builds on orca 0.24.0 and dista 3f86c92. (#145)
+
+- **New names**: the image is now ghcr.io/morca-dev/census; the repo moved to morca-dev/census, and orca and dista to morca-dev/morca and morca-dev/dista. (#146)
+
+- **git without a shell**: the census runs git directly, without `sh` or `iconv`, a step towards a distroless runtime image. (#147)
+
 ## 1.3.0 - 2026-11-11
 
 - **Commit subjects**: `mojo.commits` keeps each commit's subject line. (#102, #131)
