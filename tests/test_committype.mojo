@@ -15,7 +15,7 @@ def test_conventional() raises:
     _is("chore: tidy", "chore")
     _is("ci: run on arm", "chore")
     _is("refactor: migrate _ffi.mojo to Pointer (Mojo 1.0.0)", "migration")
-    _is("fix: bump to latest Mojo nightly, fix mechanical breaks (#766)", "version")
+    _is("fix: bump to latest Mojo nightly, fix mechanical breaks (#766)", "migration")
 
 
 def test_version() raises:
@@ -49,7 +49,9 @@ def test_first_word() raises:
 
 def test_rules_v2() raises:
     # Shapes the first rules left as `other` in a sample of census repos.
-    _is("toolchain: lock mojo 1.2.0.dev2026092605, refresh MOJO_NOTES for 1.2.0", "version")
+    _is("toolchain: lock mojo 1.2.0.dev2026092605, refresh MOJO_NOTES for 1.2.0", "migration")
+    _is("fix: bump Mojo to 24.3", "version")
+    _is("bump mojo to 24.3 and adapt the tests", "migration")
     _is("toolchain: pin pixi 0.78", "chore")
     _is("migrate: .load -> .unsafe_load for the pinned compiler", "migration")
     _is("accel: SIMD/parallel/GPU pass, parity tests green", "perf")
