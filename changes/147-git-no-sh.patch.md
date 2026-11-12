@@ -1,0 +1,1 @@
+- **git without a shell**: the census runs git directly, without `sh` or `iconv`, a step towards a distroless runtime image. (#147)
