@@ -3,6 +3,18 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.4.0 - 2026-11-12
+
+- **Ready for Mojo 1.3**: `Pointer` in place of the deprecated `UnsafePointer`, and `__deinit__` in place of `__del__`. (#149)
+
+- **Issues and PRs per month**: the overview charts issues opened and closed and pull requests opened and merged each month, from mojo.issues; `/api/overview` months gain `issues`. (#150)
+
+- **Fewer commits typed other**: tags, more prefixes (`toolchain:`, `accel:`, `migrate:`), Mojo release numbers without the word Mojo, and `Initial commit` get a type; on a sample, `other` went from 49% to 43%. (#151)
+
+- **On morca-mojo 0.25.0, as morca** (breaking for operators): the image has `/opt/morca`, `morca.toml` (and `morca.dev.toml`, `morca.lab.toml`) and every `MORCA_*` variable in place of their orca names; a stack deploying it needs its `ORCA_*` settings renamed `MORCA_*` first. (#154)
+
+- **Pull request images build without line tables** (`-g0`), about 15% faster with 30% less peak memory; images pushed from dev, lab and tags keep `-g1`. (#155)
+
 ## 1.3.1 - 2026-11-12
 
 - **mojo_retool registered**: the upgrade step that re-reads every history works; 1.3.0's failed with "pipeline mojo_retool isn't registered". (#143)
