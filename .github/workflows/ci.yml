@@ -48,7 +48,9 @@ jobs:
   #
   # One per architecture, each on its own runner (no emulation), built for a
   # baseline CPU (Dockerfile.morca, MOJO_TARGET_CPU) and pushed as
-  # <tag>-<arch>; `manifest` joins them under the tags deploys use.
+  # <tag>-<arch>; `manifest` joins them under the tags deploys use. A pull
+  # request's image is built without line tables (MOJO_DEBUG=-g0, #153), as
+  # it is never deployed; pushed ones keep them.
   image-arch:
     name: image (${{ matrix.arch }}, ${{ matrix.runner }}, ${{ matrix.cpu }})
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
@@ -89,6 +91,7 @@ jobs:
             MORCA_COMMIT=${{ github.sha }}
             CENSUS_VERSION=${{ github.ref_type == 'tag' && github.ref_name || '' }}
             MOJO_TARGET_CPU=${{ matrix.cpu }}
+            MOJO_DEBUG=${{ github.event_name == 'pull_request' && '-g0' || '-g1' }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

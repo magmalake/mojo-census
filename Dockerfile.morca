@@ -22,7 +22,9 @@
 # llvm-symbolizer, so a crash's stack dump in a run's driver.log names each
 # frame's function, file and line. The line tables, compressed, make a
 # binary about half as big again (gharchive: 4.2 MB, 6.5 MB with them,
-# 25 MB uncompressed) and leave its speed as it was.
+# 25 MB uncompressed) and leave its speed as it was. MOJO_DEBUG=-g0 builds
+# without them, about 15% faster and with 30% less peak memory (#153): CI
+# passes it for pull requests, whose images are never deployed.
 #
 # MOJO_TARGET_CPU: mojo build targets the build host's CPU by default. CI
 # builds on GitHub's arm64 runners (Neoverse N2, Armv9 with SVE2), and Hetzner's
@@ -56,11 +58,12 @@ ARG MORCA_SOURCE=""
 ARG MORCA_COMMIT=""
 ARG MOJO_TARGET_CPU=neoverse-n1
 ARG MOJO_BUILD_JOBS=""
+ARG MOJO_DEBUG=-g1
 COPY . .
 # MORCA_SOURCE and MORCA_COMMIT reach every program now, which only a
 # pipeline's describe reads.
 RUN mkdir -p /out/bin /out/pipelines \
-    && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines -g1 --target-cpu "$MOJO_TARGET_CPU" \
+    && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines "$MOJO_DEBUG" --target-cpu "$MOJO_TARGET_CPU" \
             -D MORCA_SOURCE='"${MORCA_SOURCE}"' -D MORCA_COMMIT='"${MORCA_COMMIT}"' || exit 1; \
         echo "mojo build: peak memory $(awk "{print int(\$1 / 1048576)}" /sys/fs/cgroup/memory.peak 2> /dev/null) MB"; \
         if ls /out/pipelines/* > /dev/null 2>&1; then /out/bin/morca locate /out/pipelines/* --root .; fi'
