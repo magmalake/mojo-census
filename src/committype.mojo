@@ -13,7 +13,9 @@ for the repo page's commits and the Migrations page.
    counts for steps 3 and 4.
 3. A commit that changed the Mojo version (it has a `mojo_version` row in
    mojo.migrations), or whose subject says it moved to a Mojo version
-   (`update to Mojo 24.3`, `bump nightly to dev2026080206`), is `version`.
+   (`update to Mojo 24.3`, `bump nightly to dev2026080206`), is `version`,
+   or `migration` when it also says it adapted code (`refresh`, `fix`,
+   `port`, `adapt`, `rework`; `lock mojo 1.2.0..., refresh MOJO_NOTES`).
 4. A subject about migrating (`migrate`, `deprecated`, `port to Mojo`) is
    `migration`: work that follows a version change.
 5. Otherwise the first word (`Fix`, `Added`, `Refactor`, `Update README`,
@@ -30,7 +32,7 @@ can check it.
 from model import Migration, Point
 
 
-comptime COMMIT_TYPES_VERSION = 2
+comptime COMMIT_TYPES_VERSION = 3
 """Bumped when the rules change, so the console can say which it used."""
 
 
@@ -230,6 +232,19 @@ def _says_migration(ws: List[String]) -> Bool:
     return False
 
 
+def _says_adapting(ws: List[String]) -> Bool:
+    """Whether a subject that moves to a Mojo version also says it changed
+    what the version needed (`lock mojo 1.2.0..., refresh MOJO_NOTES`,
+    `bump to 24.3 and fix the tests`): a migration, not only a bump."""
+    for ref w in ws:
+        if (
+            w.startswith("refresh") or w.startswith("adapt") or w.startswith("fix")
+            or w == "port" or w == "ported" or w.startswith("rework") or w.startswith("rewrit")
+        ):
+            return True
+    return False
+
+
 def commit_type(subject: String, version_change: Bool) -> String:
     """The type of a commit with this subject; `version_change` when
     mojo.migrations has a Mojo version change at it."""
@@ -273,13 +288,13 @@ def commit_type(subject: String, version_change: Bool) -> String:
     var scan = words(s) if base.byte_length() == 0 and rest_at > 0 else ws.copy()
     var migration = _says_migration(scan)
     if version_change:
-        return "migration" if migration else "version"
+        return "migration" if migration or _says_adapting(scan) else "version"
     if base.byte_length() > 0 and base != "chore" and base != "fix" and base != "refactor":
         return base
     if base.byte_length() > 0 and migration:
         return "migration"
     if _says_version(scan):
-        return "version"
+        return "migration" if _says_adapting(scan) else "version"
     if migration:
         return "migration"
     if base.byte_length() > 0:
