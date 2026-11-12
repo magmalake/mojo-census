@@ -1,1 +1,0 @@
-- **On morca-mojo 0.25.1**: images get the commit and source as environment, not `-D` defines, so a commit that changes no Mojo source can reuse the compile.

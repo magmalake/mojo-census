@@ -8,6 +8,14 @@
 # newest release first.
 
 [[version]]
+version = "1.5.0"
+
+[[version.step]]
+id = "retool-file-mix"
+when = "after"
+run = "morca backfill --rerun mojo_retool @all"
+
+[[version]]
 version = "1.3.0"
 
 [[version.step]]

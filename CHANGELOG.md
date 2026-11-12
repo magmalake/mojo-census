@@ -3,6 +3,18 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.5.0 - 2026-11-12
+
+- **Commit types from the files a commit changes**: a commit the subject rules call other is typed like its nearest hand-labelled commits by the kinds of files it changed, and a commit can show secondary types (`Fix +test`); mojo.commits gains `changes`. (#161)
+
+- **CI keeps Mojo's compile cache between image builds**, and pull requests build with `-g1` again, as pushed images do; a rerun of the same commit reuses part of the compile. (#162)
+
+- **On morca-mojo 0.25.1**: images get the commit and source as environment, not `-D` defines, so the commit no longer changes what is compiled. (#163)
+
+**After deploying** (deploy.sh shows these and runs the commands):
+
+- Run `morca backfill --rerun mojo_retool @all`.
+
 ## 1.4.1 - 2026-11-12
 
 - **A Mojo pin that adapts code is a migration**: a subject that moves to a Mojo version and also says it refreshed, fixed, ported, adapted or reworked something (`lock mojo 1.2.0..., refresh MOJO_NOTES`) is typed migration, not version. (#157)

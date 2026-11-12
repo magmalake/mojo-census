@@ -1,4 +1,0 @@
-[[step]]
-id = "retool-file-mix"
-when = "after"
-run = "morca backfill --rerun mojo_retool @all"
