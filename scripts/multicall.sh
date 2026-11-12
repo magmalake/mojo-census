@@ -32,7 +32,12 @@ while [ $# -gt 0 ] && [ "$1" != -- ]; do
     shift
 done
 [ $# -gt 0 ] && shift
-gen=$(mktemp -d "${TMPDIR:-/tmp}/multicall.XXXXXX")
+# At a fixed path in the project, not a fresh temporary directory: the path
+# is part of what Mojo's compile cache keys on, so a new one each build
+# would never hit (#153).
+gen=$PWD/build/multicall-gen/$binary
+rm -rf "$gen"
+mkdir -p "$gen"
 trap 'rm -rf "$gen"' EXIT
 # A module name no program has.
 main=$gen/multicall_main.mojo

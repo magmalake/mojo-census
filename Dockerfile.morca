@@ -22,9 +22,13 @@
 # llvm-symbolizer, so a crash's stack dump in a run's driver.log names each
 # frame's function, file and line. The line tables, compressed, make a
 # binary about half as big again (gharchive: 4.2 MB, 6.5 MB with them,
-# 25 MB uncompressed) and leave its speed as it was. MOJO_DEBUG=-g0 builds
-# without them, about 15% faster and with 30% less peak memory (#153): CI
-# passes it for pull requests, whose images are never deployed.
+# 25 MB uncompressed) and leave its speed as it was. Every build has them,
+# pull requests' too: a different -g would be a different compile cache key.
+#
+# Mojo's compile cache (#153) is at MODULAR_CACHE_DIR, a BuildKit cache mount
+# (`mojo-cache`) that CI carries from run to run (ci.yml). Paths are kept
+# relative to the project in what is compiled (-strip-file-prefix), so a
+# build elsewhere can share it.
 #
 # MOJO_TARGET_CPU: mojo build targets the build host's CPU by default. CI
 # builds on GitHub's arm64 runners (Neoverse N2, Armv9 with SVE2), and Hetzner's
@@ -58,12 +62,12 @@ ARG MORCA_SOURCE=""
 ARG MORCA_COMMIT=""
 ARG MOJO_TARGET_CPU=neoverse-n1
 ARG MOJO_BUILD_JOBS=""
-ARG MOJO_DEBUG=-g1
+ENV MODULAR_CACHE_DIR=/mojo-cache
 COPY . .
 # MORCA_SOURCE and MORCA_COMMIT reach every program now, which only a
 # pipeline's describe reads.
-RUN mkdir -p /out/bin /out/pipelines \
-    && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines "$MOJO_DEBUG" --target-cpu "$MOJO_TARGET_CPU" \
+RUN --mount=type=cache,id=mojo-cache,target=/mojo-cache mkdir -p /out/bin /out/pipelines \
+    && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines -g1 -strip-file-prefix=/src/project/ --target-cpu "$MOJO_TARGET_CPU" \
             -D MORCA_SOURCE='"${MORCA_SOURCE}"' -D MORCA_COMMIT='"${MORCA_COMMIT}"' || exit 1; \
         echo "mojo build: peak memory $(awk "{print int(\$1 / 1048576)}" /sys/fs/cgroup/memory.peak 2> /dev/null) MB"; \
         if ls /out/pipelines/* > /dev/null 2>&1; then /out/bin/morca locate /out/pipelines/* --root .; fi'
