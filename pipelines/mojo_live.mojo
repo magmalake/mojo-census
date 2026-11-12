@@ -43,6 +43,8 @@ from lake import (
 )
 from live import (
     HEADS_BATCH,
+    Asked,
+    ask_heads,
     LiveCommit,
     heads_query,
     history_query,
@@ -113,6 +115,11 @@ def _heads_batch(heads: Dict[String, String], at: Int64) raises -> RecordBatch:
     return batch_of(cs)
 
 
+def _graphql(body: String) raises -> Tuple[Int, String]:
+    var r = github_graphql(body)
+    return (r.status, r.body)
+
+
 @fieldwise_init
 struct Poll(Movable):
     var commits: List[LiveCommit]
@@ -122,6 +129,9 @@ struct Poll(Movable):
     var remaining: Int
     var cut: Int
     """Repos whose new commits were more than a history query returns."""
+    var skipped: Int
+    """Repos not asked this time: their heads batch failed."""
+    var error: String
 
 
 def poll(repos: List[String], mut heads: Dict[String, String]) raises -> Poll:
@@ -130,42 +140,45 @@ def poll(repos: List[String], mut heads: Dict[String, String]) raises -> Poll:
     var out = List[LiveCommit]()
     var moved = 0
     var first = 0
-    var cost = 0
-    var remaining = -1
     var cut = 0
+    var got = Asked()
     var i = 0
     while i < len(repos):
         var batch = List[String]()
         for j in range(i, min(i + HEADS_BATCH, len(repos))):
             batch.append(repos[j])
         i += HEADS_BATCH
-        var r = github_graphql(heads_query(batch))
-        if r.status != 200:
-            raise Error("GraphQL heads: HTTP ", r.status, ": ", String(r.body[byte = : min(200, r.body.byte_length())]))
-        var h = parse_heads(r.body, batch)
-        cost += max(h.cost, 0)
-        remaining = h.remaining
-        for e in h.heads.items():
-            var known = heads.get(e.key, String())
-            if known == e.value:
-                continue
-            if known.byte_length() == 0:
-                first += 1
-                heads[e.key] = e.value
-                continue
-            moved += 1
+        ask_heads[_graphql](batch, got)
+    if got.skipped == len(repos):
+        raise Error("GraphQL heads: every batch failed, the last: ", got.last_error)
+    var cost = got.cost
+    var remaining = got.remaining
+    for e in got.heads.items():
+        var known = heads.get(e.key, String())
+        if known == e.value:
+            continue
+        if known.byte_length() == 0:
+            first += 1
+            heads[e.key] = e.value
+            continue
+        moved += 1
+        var body: String
+        try:
             var hr = github_graphql(history_query(e.key))
             if hr.status != 200:
                 # Left as it was: the next poll asks again.
                 continue
-            var got = new_since(parse_history(e.key, hr.body, now() * 1_000_000), known)
-            if not got[1]:
-                cut += 1
-            for ref c in got[0]:
-                out.append(c.copy())
-            heads[e.key] = e.value
-            cost += 1
-    return Poll(out^, moved, first, cost, remaining, cut)
+            body = hr.body
+        except:
+            continue
+        var since = new_since(parse_history(e.key, body, now() * 1_000_000), known)
+        if not since[1]:
+            cut += 1
+        for ref c in since[0]:
+            out.append(c.copy())
+        heads[e.key] = e.value
+        cost += 1
+    return Poll(out^, moved, first, cost, remaining, cut, got.skipped, got.last_error)
 
 
 def live(mut ctx: Ctx, h: Hour) raises -> Int:
@@ -200,6 +213,7 @@ def live(mut ctx: Ctx, h: Hour) raises -> Int:
                 "poll ", polls, ": ", len(repos), " repos in ", now() - started, " s, ",
                 p.moved, " moved, ", p.first_seen, " seen for the first time, ",
                 len(p.commits), " new commits", String(" (", p.cut, " cut)") if p.cut > 0 else String(),
+                String(", ", p.skipped, " not asked (", p.error, ")") if p.skipped > 0 else String(),
                 "; ", p.cost, " points, ", p.remaining, " left",
             ))
         except e:
