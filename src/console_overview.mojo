@@ -317,6 +317,33 @@ def _curve_card(
     )
 
 
+def _issues_card(ov: Overview, months: List[String]) -> String:
+    """Issues opened and closed and pull requests opened and merged per
+    month, over `months` (the commits card's, which end with the last full
+    month); "" before mojo.issues has rows."""
+    var n = len(months)
+    if len(ov.issues_opened) < n or n < 2:
+        return String()
+    var total = Int64(0)
+    for k in range(n):
+        total += ov.issues_opened[k] + ov.prs_opened[k]
+    if total == 0:
+        return String()
+    var names: List[String] = ["Issues opened", "Issues closed", "PRs opened", "PRs merged"]
+    var colors: List[String] = ["var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)"]
+    var series = List[List[Int64]]()
+    for src in [ov.issues_opened.copy(), ov.issues_closed.copy(), ov.prs_opened.copy(), ov.prs_merged.copy()]:
+        var s = List[Int64]()
+        for k in range(n):
+            s.append(src[k])
+        series.append(s^)
+    return _curve_card(
+        "Issues and PRs per month", months, names, series, colors, False,
+        "From GitHub's issues list of each census repo (mojo.issues), to the last full month."
+        " A repo counts once mojo_issues has read it.",
+    )
+
+
 def _as_of(ms: Int64) -> String:
     """`2026-11-05 03:12 UTC` for a time in milliseconds."""
     var iso = micros_to_iso(ms * 1000)
@@ -488,6 +515,7 @@ def overview(req: Request, c: Cache) raises -> Response:
             if len(cm) > 2 and cm[len(cm) - 1] == _this_month():
                 _ = cm.pop()
                 _ = commits_series[0].pop()
+            var issues_card = _issues_card(ov, cm)
             h.write(
                 "<h2>Growth",
                 _help(
@@ -508,6 +536,7 @@ def overview(req: Request, c: Cache) raises -> Response:
                     "Commits per month", cm, commits_names, commits_series, single_color, False,
                     "Commits in the repos' first-parent histories, to the last full month.", True,
                 ),
+                issues_card,
             )
             # Tooling share, in percent of the repos that exist that month.
             var none = List[Int64]()

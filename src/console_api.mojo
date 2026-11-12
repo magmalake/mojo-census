@@ -106,8 +106,14 @@ def overview_json(req: Request, c: Cache) raises -> Response:
             ',"repos":', ov.repos_series[k], ',"commits":', ov.commits_series[k],
             ',"tooling":{"none":', ov.tool_none[k], ',"magic":', ov.tool_magic[k],
             ',"pixi":', ov.tool_pixi[k],
-            ',"bazel":', ov.tool_bazel[k], ',"python":', ov.tool_python[k], "}}",
+            ',"bazel":', ov.tool_bazel[k], ',"python":', ov.tool_python[k], "}",
         )
+        if k < len(ov.issues_opened):
+            out.write(
+                ',"issues":{"opened":', ov.issues_opened[k], ',"closed":', ov.issues_closed[k],
+                ',"prs_opened":', ov.prs_opened[k], ',"prs_merged":', ov.prs_merged[k], "}",
+            )
+        out += "}"
     out += '],"rising":['
     for i in range(len(c.rising)):
         if i > 0:

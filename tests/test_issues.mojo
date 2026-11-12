@@ -10,9 +10,11 @@ from issues import (
     issue_rows,
     issues_batch,
     merge_issues,
+    add_issue_months,
     parse_issues,
     summarize,
 )
+from overview import Overview
 
 comptime PAGE = """[
  {"number": 12, "title": "Parser is slow", "state": "open", "user": {"login": "ann"},
@@ -87,6 +89,34 @@ def test_summary() raises:
     assert_equal(x.prs[0].number, 14)  # opened last
     assert_equal(x.total(), ISSUES_SHOWN + 8)
 
+
+
+def _at(days: Int) -> Int64:
+    return Int64(days) * 86_400_000_000
+
+
+def _r(kind: String, created: Int64, closed: Int64, merged: Int64) -> IssueRow:
+    return IssueRow(
+        "o/r", 1, kind, "closed" if closed > 0 else "open", "t", List[String](), "a", 0,
+        created, created, closed, merged, 0,
+    )
+
+
+def test_issue_months() raises:
+    # 2026-01 .. 2026-03; 20454 is 2026-01-01, 20485 2026-02-01, 20513 2026-03-01.
+    var ov = Overview()
+    ov.months = ["2026-01", "2026-02", "2026-03"]
+    var rows = List[IssueRow]()
+    rows.append(_r("issue", _at(20454 + 3), _at(20485 + 1), 0))  # opened Jan, closed Feb
+    rows.append(_r("issue", _at(20400), 0, 0))  # before the first month: counts in Jan
+    rows.append(_r("pr", _at(20485 + 5), _at(20513 + 2), _at(20513 + 2)))  # Feb, merged Mar
+    rows.append(_r("pr", _at(20513 + 1), _at(20513 + 4), 0))  # closed unmerged
+    rows.append(_r("issue", _at(20600), 0, 0))  # after the last month: not counted
+    add_issue_months(ov, rows)
+    assert_equal(ov.issues_opened, [Int64(2), 0, 0])
+    assert_equal(ov.issues_closed, [Int64(0), 1, 0])
+    assert_equal(ov.prs_opened, [Int64(0), 1, 1])
+    assert_equal(ov.prs_merged, [Int64(0), 0, 1])
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

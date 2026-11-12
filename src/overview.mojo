@@ -174,6 +174,13 @@ struct Overview(Movable):
     var tool_pixi: List[Int64]
     var tool_bazel: List[Int64]
     var tool_python: List[Int64]
+    var issues_opened: List[Int64]
+    """Per month of `months`, from mojo.issues (`issues.add_issue_months`):
+    issues opened, issues closed, pull requests opened and merged. Empty
+    until they are added."""
+    var issues_closed: List[Int64]
+    var prs_opened: List[Int64]
+    var prs_merged: List[Int64]
 
     def __init__(out self):
         self.repos = 0
@@ -210,6 +217,10 @@ struct Overview(Movable):
         self.tool_pixi = List[Int64]()
         self.tool_bazel = List[Int64]()
         self.tool_python = List[Int64]()
+        self.issues_opened = List[Int64]()
+        self.issues_closed = List[Int64]()
+        self.prs_opened = List[Int64]()
+        self.prs_merged = List[Int64]()
 
 
 struct Recent(Movable):
