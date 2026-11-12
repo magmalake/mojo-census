@@ -1,1 +1,0 @@
-- **Issues and PRs per month**: the overview charts issues opened and closed and pull requests opened and merged each month, from mojo.issues; `/api/overview` months gain `issues`. (#150)
