@@ -62,7 +62,7 @@ ARG MORCA_SOURCE=""
 ARG MORCA_COMMIT=""
 ARG MOJO_TARGET_CPU=neoverse-n1
 ARG MOJO_BUILD_JOBS=""
-ENV MODULAR_CACHE_DIR=/mojo-cache
+ENV MODULAR_CACHE_DIR=/mojo-cache MODULAR_ENABLE_CACHE_LOGGING=1
 COPY . .
 # MORCA_SOURCE and MORCA_COMMIT reach every program now, which only a
 # pipeline's describe reads.
