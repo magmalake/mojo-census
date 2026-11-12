@@ -63,7 +63,7 @@ RUN pixi install --locked
 FROM env AS build
 ARG MOJO_TARGET_CPU=neoverse-n1
 ARG MOJO_BUILD_JOBS=""
-ENV MODULAR_CACHE_DIR=/mojo-cache
+ENV MODULAR_CACHE_DIR=/mojo-cache MODULAR_ENABLE_CACHE_LOGGING=1
 COPY . .
 RUN --mount=type=cache,id=mojo-cache,target=/mojo-cache mkdir -p /out/bin /out/pipelines \
     && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines -g1 -strip-file-prefix=/src/project/ --target-cpu "$MOJO_TARGET_CPU" || exit 1; \

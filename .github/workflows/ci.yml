@@ -76,6 +76,8 @@ jobs:
       # export. A hit would have saved only `pixi install` and the git build
       # (about 3 minutes); the compile runs on every commit anyway.
       # load puts the image in the runner's docker, for the steps below.
+      - name: Runner CPU
+        run: grep -m1 'model name' /proc/cpuinfo || lscpu | grep -i 'model name\|vendor'; nproc
       - uses: docker/setup-buildx-action@v3
       # Mojo's compile cache (#153): only Dockerfile.morca's `mojo-cache`
       # mount, about 0.5 to 1 GB an architecture, not a layer cache. Saved per
