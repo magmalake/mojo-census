@@ -31,14 +31,18 @@
 # On amd64 CI passes x86-64-v3 (AVX2: Haswell, Zen 1 and later, which every
 # Hetzner CPX/CCX and current cloud x86 server has).
 #
-# The stages are ordered for the layer cache (CI keeps it between runs): `env`
+# The stages are ordered for the layer cache (local builds; CI keeps none, #117): `env`
 # is the pixi environment and depends only on pixi.toml and pixi.lock, and
 # both `build` (the project's source) and `git` (via `curl`) start from it, so
 # a commit that changes only source reuses `pixi install` and git as they were.
 # The build arguments are declared in the stages that use them, after `env`:
 # a RUN sees every ARG declared before it, so a new ORCA_COMMIT on each commit
 # would otherwise rerun `pixi install` too.
-FROM ghcr.io/prefix-dev/pixi:0.78.0 AS env
+# The bookworm variant: the stages built from `env` then link against the same
+# glibc as the debian:bookworm-slim stages they run in, and apt reaches Debian's
+# mirrors rather than archive.ubuntu.com, whose DNS failed for CI on
+# 2026-11-11 (the default tag is Ubuntu noble).
+FROM ghcr.io/prefix-dev/pixi:0.78.0-bookworm AS env
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src/project
@@ -137,13 +141,17 @@ COPY --from=build /src/project/.pixi/envs/default/ssl /opt/orca/ssl
 # worker pool), which it reads with ORCA_CONFIG=/opt/orca/orca.dev.toml;
 # orca.lab.toml the lab stack's (ballast only).
 COPY --from=build /src/project/orca.toml /src/project/orca.dev.toml /src/project/orca.lab.toml /opt/orca/
-# The console's Changelog tab (/how/changelog) reads it.
-COPY --from=build /src/project/CHANGELOG.md /opt/orca/
+# The console's Changelog tab (/how/changelog) reads it; deploy.sh reads
+# upgrade.toml, the steps a deploy of each release needs (ORCA_UPGRADE).
+COPY --from=build /src/project/CHANGELOG.md /src/project/upgrade.toml /opt/orca/
 ARG ORCA_SOURCE=""
 ARG ORCA_COMMIT=""
+# The release this image is (`1.2.0`), empty for one built from a branch; the
+# console's footer shows it, else the commit.
+ARG CENSUS_VERSION=""
 ENV ORCA_CONFIG=/opt/orca/orca.toml ORCA_PIPELINES_DIR=/opt/orca/pipelines \
-    CENSUS_CHANGELOG=/opt/orca/CHANGELOG.md \
-    ORCA_SOURCE=${ORCA_SOURCE} ORCA_COMMIT=${ORCA_COMMIT}
+    CENSUS_CHANGELOG=/opt/orca/CHANGELOG.md ORCA_UPGRADE=/opt/orca/upgrade.toml \
+    ORCA_SOURCE=${ORCA_SOURCE} ORCA_COMMIT=${ORCA_COMMIT} CENSUS_VERSION=${CENSUS_VERSION}
 ENV CONDA_PREFIX=/opt/orca LD_LIBRARY_PATH=/opt/orca/lib PATH=/opt/orca/bin:/opt/orca/pipelines:/usr/bin:/bin \
     LLVM_SYMBOLIZER_PATH=/opt/orca/libexec/llvm-symbolizer GIT_EXEC_PATH=/opt/orca/libexec/git
 ENTRYPOINT ["/opt/orca/bin/orca"]

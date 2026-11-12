@@ -1,5 +1,6 @@
-"""Clones each newly found Mojo repository and records its commits, tooling and
-version changes, and tags.
+"""Clones each newly found Mojo repository and records its commits, tooling,
+packaging and Mojo version changes, and tags; repositories it has read
+before are skipped (mojo_retool reads them again).
 
 Keyed by the `repo` column of `mojo.repos` (`owner/name`), 50 repositories
 a run, and a sensor, so each snapshot mojo_repos commits starts runs for the
@@ -8,8 +9,11 @@ its keys: it sends every repository to a dista task (`read_history`: a
 bare clone and one `git log`), then appends what comes back to
 `mojo.commits` and `mojo.migrations` as one snapshot each.
 
-Each repository's git tags go to `mojo.tags`, with the tooling and Mojo
-version at the tagged commit when it is on the first-parent history.
+Each repository's git tags go to `mojo.tags`, with the tooling, packaging
+and Mojo version at the tagged commit when it is on the first-parent
+history. A repository read before tags were takes them from its rows in
+`mojo.commits`, so it has the values of its first read until mojo_retool
+reads it again.
 
 A rerun doesn't duplicate rows: a repository already in `mojo.commits` gets
 no commits or migrations again, and one already in `mojo.tags` no tags. A
@@ -75,12 +79,12 @@ def _sizes(mut ctx: Ctx) raises -> Dict[String, Int64]:
 
 def _commits_of(
     mut ctx: Ctx, repos: List[String]
-) raises -> Dict[String, Tuple[String, String]]:
-    """sha -> (tooling, Mojo version) of the commits mojo.commits has for
-    `repos`, for the tags of repositories read before tags were."""
+) raises -> Dict[String, Tuple[String, String, String]]:
+    """sha -> (tooling, Mojo version, packaging) of the commits mojo.commits
+    has for `repos`, for the tags of repositories read before tags were."""
     # Only needed when some repository has commits but no tags: the tags'
     # tooling and version are looked up by sha instead of re-reading history.
-    var out = Dict[String, Tuple[String, String]]()
+    var out = Dict[String, Tuple[String, String, String]]()
     if len(repos) == 0:
         return out^
     var want = Dict[String, Bool]()
@@ -89,16 +93,20 @@ def _commits_of(
     var t = table(ctx, COMMITS)
     if not t.metadata.has_current_snapshot:
         return out^
-    for b in t.scan().select(["repo", "sha", "tooling", "mojo_version"]).to_batches():
+    # `histories` has run `ensure_table` first, so `packaging` is a column
+    # (null in rows from before it).
+    for b in t.scan().select(["repo", "sha", "tooling", "mojo_version", "packaging"]).to_batches():
         var ir = col(b, "repo")
         var isha = col(b, "sha")
         var it = col(b, "tooling")
         var iv = col(b, "mojo_version")
+        var ip = col(b, "packaging")
         for r in range(b.num_rows):
             if str_at(b.column(ir), r) in want:
                 out[str_at(b.column(isha), r)] = (
                     str_at(b.column(it), r),
                     str_at(b.column(iv), r),
+                    str_at(b.column(ip), r),
                 )
     return out^
 
@@ -171,6 +179,7 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     var t_at = ColumnBuilder.of(ts_, 5)
     var t_tool = ColumnBuilder.of(ts_, 6)
     var t_ver = ColumnBuilder.of(ts_, 7)
+    var t_pack = ColumnBuilder.of(ts_, 8)
 
     var cs = commits_schema()
     var ms = migrations_schema()
@@ -183,6 +192,8 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     var c_tool = ColumnBuilder.of(cs, 7)
     var c_ver = ColumnBuilder.of(cs, 8)
     var c_src = ColumnBuilder.of(cs, 9)
+    var c_pack = ColumnBuilder.of(cs, 10)
+    var c_subj = ColumnBuilder.of(cs, 11)
     var m_repo = ColumnBuilder.of(ms, 1)
     var m_sha = ColumnBuilder.of(ms, 2)
     var m_at = ColumnBuilder.of(ms, 3)
@@ -220,6 +231,7 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
                 t_at.add(ts_or_null(t.tagged_at))
                 t_tool.add(str_or_null(t.tooling))
                 t_ver.add(str_or_null(t.mojo_version))
+                t_pack.add(str_or_null(t.packaging))
         if names[i] in done:
             ctx.log(String(names[i], ": ", len(tags), " tags (history already read)"))
             continue
@@ -240,6 +252,8 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
             c_tool.add(Datum.string_(c.tooling))
             c_ver.add(str_or_null(c.mojo_version))
             c_src.add(str_or_null(c.version_source))
+            c_pack.add(str_or_null(c.packaging))
+            c_subj.add(str_or_null(c.subject))
         for ref m in h.migrations.items:
             m_repo.add(Datum.string_(m.repo))
             m_sha.add(Datum.string_(m.sha))
@@ -252,12 +266,12 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     # returns it instead of appending again.
     var n = len(c_repo)
     if n > 0:
-        _ = append(ctx, commits_t, [batch_of([c_repo^, c_sha^, c_at^, c_seq^, c_lines^, c_files^, c_tool^, c_ver^, c_src^])])
+        _ = append(ctx, commits_t, [batch_of([c_repo^, c_sha^, c_at^, c_seq^, c_lines^, c_files^, c_tool^, c_ver^, c_src^, c_pack^, c_subj^])])
     if len(m_repo) > 0:
         _ = append(ctx, migrations_t, [batch_of([m_repo^, m_sha^, m_at^, m_kind^, m_from^, m_to^])])
     var n_tags = len(t_repo)
     if n_tags > 0:
-        _ = append(ctx, tags_t, [batch_of([t_repo^, t_tag^, t_commit^, t_ann^, t_at^, t_tool^, t_ver^])])
+        _ = append(ctx, tags_t, [batch_of([t_repo^, t_tag^, t_commit^, t_ann^, t_at^, t_tool^, t_ver^, t_pack^])])
     ctx.log(String(
         len(refs), " repositories read (", len(tags_only), " for tags only, ",
         failed, " failed), ", n, " commits, ", n_tags, " tags",

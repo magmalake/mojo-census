@@ -1,5 +1,5 @@
 #!/bin/sh
-# The tags CI pushes ghcr.io/magmalake/orca under (.github/workflows/ci.yml),
+# The tags CI pushes ghcr.io/morca-dev/census under (.github/workflows/ci.yml),
 # one a line, from GitHub's environment: <short sha>, then the tag without its
 # v for a tag push, lab for the lab branch (orca.lab.toml's stack), else dev. The image job pushes each as <tag>-<arch>, and
 # the manifest job joins the architectures under <tag>.

@@ -20,7 +20,8 @@ and a `recipe.yaml` of its own), the rows of `mojo.repo_deps`.
 from std.os import getenv
 
 from deps import Dep, declared_count, dedupe, encode_deps, is_recipe, manifest_deps
-from history import TIMED_OUT, _sh, _workdir, git_clone, git_net, git_timeout_ms, safe_repo
+from command import STDERR_DROP, TIMED_OUT, git, remove_tree
+from history import _workdir, git_clone, git_net, git_timeout_ms, safe_repo
 from mojo_releases import estimate_version
 from versions import (
     SOURCE_DATE,
@@ -30,6 +31,7 @@ from versions import (
     manifest_version,
     pick_version,
     pin_version,
+    pylock_version,
     readme_version,
     script_version,
     usable,
@@ -120,7 +122,10 @@ def classify(paths: List[String]) -> Candidates:
         var base = _base(p)
         var low = base.lower()
         var root = base == p
-        if root and (p == "magic.lock" or p == "pixi.lock"):
+        if root and (
+            p == "magic.lock" or p == "pixi.lock" or p == "uv.lock"
+            or p == "poetry.lock" or p == "pdm.lock"
+        ):
             c.lock.append(p)
         elif root and (
             p == "pixi.toml" or p == "mojoproject.toml" or p == "pyproject.toml"
@@ -172,20 +177,16 @@ def _show(dir: String, rev: String, path: String) raises -> String:
     """`path` at `rev`, cut to `MAX_BYTES`, or "" if there isn't one. In a
     blobless clone this is what fetches the blob, one file at a time, so it
     gets git's stall detector and `GIT_TIMEOUT_SECONDS` as a clone does."""
-    var r = _sh(String(
-        git_net(), " -C '", dir, "' show '", rev, ":", path, "' 2>/dev/null | head -c ", MAX_BYTES,
-    ), git_timeout_ms())
+    var args = git_net()
+    for a in ["-C", dir, "show", String(rev, ":", path)]:
+        args.append(a)
+    var r = git(args, git_timeout_ms(), STDERR_DROP, MAX_BYTES)
     if r[0] == TIMED_OUT:
         # Not "no such file": the repository fails, and keeps its old row.
         raise Error("git show ", path, ": ", r[1])
     if r[0] != 0:
         return String()
     return r[1]
-
-
-def _quoted(path: String) -> Bool:
-    """Whether `path` is safe inside the single quotes of a shell command."""
-    return "'" not in path
 
 
 def _text(dir: String, path: String, mut cache: Dict[String, String]) raises -> String:
@@ -205,8 +206,6 @@ def _first(
     """The first version `kind` ('lock', 'manifest', 'file', 'script' or
     'readme') reads from `paths`; `file` is set to its path."""
     for p in paths:
-        if not _quoted(p):
-            continue
         var text = _text(dir, p, cache)
         if text.byte_length() == 0:
             continue
@@ -215,7 +214,11 @@ def _first(
         # nothing, `pin_version` reads their `mojo==...` pins.
         var v: String
         if kind == "lock":
+            # A conda lock (`.../mojo-1.2.0-....conda`), else a Python one
+            # (`name = "mojo"`, `version = "1.2.0"`).
             v = lock_version(text)
+            if not usable(v):
+                v = pylock_version(text)
         elif kind == "manifest":
             v = manifest_version(text)
             if not usable(v):
@@ -259,7 +262,7 @@ def read_head_version(repo: String) raises -> HeadVersion:
         out.error = String("reading its HEAD: ", e)
     if dir.byte_length() > 0:
         try:
-            _ = _sh(String("rm -rf '", dir, "'"))
+            remove_tree(dir)
         except:
             pass
     return out^
@@ -269,15 +272,17 @@ def _read(repo: String, dir: String, mut out: HeadVersion) raises:
     """Fills `out` from a fresh bare clone in `dir`; git failures go in
     `out.error`. The caller removes the clone."""
     var shallow = repo == "modular/modular"
-    var clone = git_clone(
-        repo, dir, String(" --no-tags --filter=blob:none", " --depth 1" if shallow else "")
-    )
+    var flags: List[String] = ["--no-tags", "--filter=blob:none"]
+    if shallow:
+        flags.append("--depth")
+        flags.append("1")
+    var clone = git_clone(repo, dir, flags)
     if clone[0] != 0:
         out.error = String("git clone failed: ", clone[1].strip())
         return
-    var sha = _sh(String("git -C '", dir, "' rev-parse HEAD"))
+    var sha = git(["-C", dir, "rev-parse", "HEAD"])
     out.head_sha = String(sha[1].strip())
-    var tree = _sh(String("git -C '", dir, "' -c core.quotepath=off ls-tree -r --name-only HEAD"))
+    var tree = git(["-C", dir, "-c", "core.quotepath=off", "ls-tree", "-r", "--name-only", "HEAD"])
     if tree[0] != 0:
         out.error = String("git ls-tree failed: ", tree[1].strip())
         return
@@ -305,8 +310,7 @@ def _read(repo: String, dir: String, mut out: HeadVersion) raises:
     # a version: a `pyproject.toml` beside the `pixi.toml` adds its own.
     var rows = List[Dep]()
     for p in c.deps:
-        if _quoted(p):
-            rows.extend(manifest_deps(p, _text(dir, p, cache)))
+        rows.extend(manifest_deps(p, _text(dir, p, cache)))
     var unique = dedupe(rows)
     out.declared_deps = Int64(declared_count(unique))
     out.deps = encode_deps(unique)
@@ -336,16 +340,17 @@ def _read(repo: String, dir: String, mut out: HeadVersion) raises:
     # not HEAD: a project that stopped writing Mojo in 2024 was built with
     # that year's release even if its README was edited since. (A shallow
     # clone has only HEAD, so modular/modular falls back to HEAD's date.)
-    var last = _sh(String(
-        "git -C '", dir, "' log -1 --format=%ct HEAD -- '*.mojo' '*.🔥' 2>/dev/null",
-    ))
+    var last = git(
+        ["-C", dir, "log", "-1", "--format=%ct", "HEAD", "--", "*.mojo", "*.🔥"],
+        stderr=STDERR_DROP,
+    )
     var secs: Int64
     try:
         secs = Int64(Int(String(last[1].strip())))
     except:
         secs = 0
     if secs == 0 and shallow:
-        var head = _sh(String("git -C '", dir, "' log -1 --format=%ct HEAD"))
+        var head = git(["-C", dir, "log", "-1", "--format=%ct", "HEAD"])
         try:
             secs = Int64(Int(String(head[1].strip())))
         except:

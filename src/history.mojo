@@ -1,5 +1,5 @@
-"""A repository's history: lines of Mojo, tooling and Mojo version at each
-commit, and the commits where the tooling or the version changed.
+"""A repository's history: lines of Mojo, tooling, packaging and Mojo
+version at each commit, and the commits where one of those changed.
 
 `read_history` clones the repository (bare, into `MOJO_HISTORY_WORKDIR`,
 default `$TMPDIR/mojo_history`), walks its first-parent history once with
@@ -11,13 +11,41 @@ has. It needs `git` on the PATH.
 """
 
 from std.os import getenv
-from std.subprocess import run
 
 from dista import Seq
 
-from orca.proc import capture
+from command import STDERR_DROP, STDERR_MERGE, TIMED_OUT, git, make_dirs, remove_tree
 from retry import backoff_ms, env_int, log_retry, nap_ms
-from versions import lock_version, manifest_version, tooling
+from deps import names_mojo_pkg
+from versions import (
+    ToolFiles,
+    lock_version,
+    manifest_version,
+    packaging,
+    pin_version,
+    pylock_version,
+    pyproject_tables,
+    recipe_kind,
+    tooling,
+)
+
+
+comptime LOG_FORMAT = "@@%H %ct %s"
+"""A commit's header line in `git log`: sha, committer time, subject."""
+comptime SUBJECT_MAX = 200
+"""Bytes of a commit subject kept (cut on a codepoint boundary)."""
+
+
+def cut_subject(s: StringSlice) -> String:
+    """`s` to at most `SUBJECT_MAX` bytes, on a codepoint boundary."""
+    if s.byte_length() <= SUBJECT_MAX:
+        return String(s)
+    var out = String()
+    for cp in s.codepoint_slices():
+        if out.byte_length() + cp.byte_length() > SUBJECT_MAX:
+            break
+        out += cp
+    return out^
 
 
 @fieldwise_init
@@ -37,6 +65,10 @@ struct CommitRow(Copyable, Movable):
     var tooling: String
     var mojo_version: String
     var version_source: String
+    var packaging: String
+    """`rattler`, `conda-build` or `none` (`versions.packaging`)."""
+    var subject: String
+    """The first line of the commit message, at most `SUBJECT_MAX` bytes."""
 
 
 @fieldwise_init
@@ -48,7 +80,7 @@ struct MigrationRow(Copyable, Movable):
     var sha: String
     var committed_at: Int64
     var kind: String
-    """`tooling` or `mojo_version`."""
+    """`tooling`, `packaging` or `mojo_version`."""
     var from_value: String
     var to_value: String
 
@@ -69,6 +101,8 @@ struct TagRow(Copyable, Movable):
     var tooling: String
     var mojo_version: String
     """At `commit`, when it is on the first-parent history; else empty."""
+    var packaging: String
+    """At `commit`, as `tooling`."""
 
 
 @fieldwise_init
@@ -123,7 +157,7 @@ def parse_tags(repo: String, output: String) -> List[TagRow]:
             at = Int64(Int(String(f[4]).strip())) * 1_000_000
         except:
             at = 0
-        rows.append(TagRow(repo, tag, target, annotated, at, String(), String()))
+        rows.append(TagRow(repo, tag, target, annotated, at, String(), String(), String()))
     # An insertion sort by name, so a repository's tags always come out in
     # the same order whatever order git listed them in.
     for i in range(1, len(rows)):
@@ -134,37 +168,37 @@ def parse_tags(repo: String, output: String) -> List[TagRow]:
     return rows^
 
 
-def join_tags(mut tags: List[TagRow], commits: Dict[String, Tuple[String, String]]):
-    """Fills each tag's tooling and Mojo version from the commit it points
-    at (sha -> (tooling, version))."""
+def join_tags(
+    mut tags: List[TagRow], commits: Dict[String, Tuple[String, String, String]]
+):
+    """Fills each tag's tooling, Mojo version and packaging from the commit
+    it points at (sha -> (tooling, version, packaging))."""
     for ref t in tags:
         if t.commit in commits:
-            var v = commits.get(t.commit, (String(), String()))
+            var v = commits.get(t.commit, (String(), String(), String()))
             t.tooling = v[0]
             t.mojo_version = v[1]
+            t.packaging = v[2]
 
 
 def _read_tags(repo: String, dir: String, mut out: History) raises:
     """Appends the clone's tags to `out.tags`, each with the tooling and
     Mojo version of the commit it points at when `out.commits` has it."""
-    var r = _sh(String(
-        "git -C '", dir, "' for-each-ref --format='", TAG_FORMAT, "' refs/tags",
-    ))
+    var r = git(["-C", dir, "for-each-ref", String("--format=", TAG_FORMAT), "refs/tags"])
     if r[0] != 0:
         raise Error("git for-each-ref failed: ", r[1].strip())
     var tags = parse_tags(repo, r[1])
-    var by_sha = Dict[String, Tuple[String, String]]()
+    var by_sha = Dict[String, Tuple[String, String, String]]()
     for ref c in out.commits.items:
-        by_sha[c.sha] = (c.tooling, c.mojo_version)
+        by_sha[c.sha] = (c.tooling, c.mojo_version, c.packaging)
     join_tags(tags, by_sha)
     for ref t in tags:
         out.tags.append(t.copy())
 
 
 def safe_repo(repo: String) -> Bool:
-    """`owner/name` with GitHub's characters only, safe to put in a shell
-    command (repository names reach `sh -c` in `_sh`, so nothing else may
-    pass)."""
+    """`owner/name` with GitHub's characters only: it names a directory
+    under the work directory and a GitHub URL, so nothing else may pass."""
     var slashes = 0
     for c in repo.as_bytes():
         if c == UInt8(ord("/")):
@@ -191,45 +225,30 @@ def is_bazel_file(path: StringSlice) -> Bool:
     )
 
 
+def is_python_manifest(path: StringSlice) -> Bool:
+    """A root `pyproject.toml` or `requirements*.txt`: where a Python build
+    tool is told to install Mojo."""
+    if "/" in path:
+        return False
+    return path == "pyproject.toml" or (
+        path.startswith("requirements") and path.endswith(".txt")
+    )
+
+
+def is_tool_file(path: StringSlice) -> Bool:
+    """Whether a change to `path` can change a commit's tooling or Mojo
+    version, so the version is read again (Bazel's files only change the
+    tooling, recipes only the packaging: neither needs a read)."""
+    return (
+        path == "pixi.toml" or path == "pixi.lock" or path == "mojoproject.toml"
+        or path == "magic.lock" or path == "uv.lock" or path == "poetry.lock"
+        or path == "pdm.lock" or is_python_manifest(path)
+    )
+
+
 def is_mojo_file(path: StringSlice) -> Bool:
     """Whether `path` is Mojo source, in either extension."""
     return path.endswith(".mojo") or path.endswith(".🔥")
-
-
-def _sh(cmd: String, timeout_ms: Int = 0) raises -> Tuple[Int, String]:
-    """Runs `cmd` with `sh`, and returns its exit status and its output, any
-    bytes that aren't UTF-8 dropped: an old commit's author or path can be
-    Latin-1, and `run` refuses output that isn't UTF-8. With `timeout_ms`
-    the command is killed once it has run that long, and the status is
-    `TIMED_OUT`."""
-    var wrapped = String(
-        "{ ", cmd, '; echo "@@exit $?"; } | iconv -c -f UTF-8 -t UTF-8; true'
-    )
-    var out: String
-    if timeout_ms > 0:
-        # orca's `capture` runs it as the leader of a process group of its
-        # own and, past the timeout, kills the group: git and the
-        # `git-remote-https` and `index-pack` it started.
-        try:
-            out = capture(
-                ["/bin/sh", "-c", wrapped], Float64(timeout_ms) / 1000.0
-            )[1]
-        except e:
-            var msg = String(e)
-            if "took longer than" in msg:
-                msg = String("timed out after ", timeout_ms // 1000, " s")
-            return (TIMED_OUT, msg^)
-    else:
-        out = run(wrapped)
-    var at = out.rfind("@@exit ")
-    if at < 0:
-        return (-1, out^)
-    var status = Int(String(out[byte = at + 7 :]).strip())
-    return (status, String(out[byte=:at]))
-
-
-comptime TIMED_OUT = 124
-"""`_sh`'s status for a command killed at its timeout (as `timeout(1)`)."""
 
 
 def git_timeout_ms() -> Int:
@@ -238,17 +257,16 @@ def git_timeout_ms() -> Int:
     return env_int("GIT_TIMEOUT_SECONDS", 600) * 1000
 
 
-def git_net() -> String:
-    """`git` for a command that talks to GitHub: no credential prompt, and
-    git's own stall detector, which aborts a transfer slower than
+def git_net() -> List[String]:
+    """git's options for a command that talks to GitHub: git's own stall
+    detector, which aborts a transfer slower than
     `GIT_LOW_SPEED_LIMIT` bytes a second (1000) for `GIT_LOW_SPEED_SECONDS`
     (60), long before `GIT_TIMEOUT_SECONDS`. The `-c` settings reach the
     fetches a blobless clone makes later, from `git show`, too."""
-    return String(
-        "GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=",
-        env_int("GIT_LOW_SPEED_LIMIT", 1000),
-        " -c http.lowSpeedTime=", env_int("GIT_LOW_SPEED_SECONDS", 60),
-    )
+    return [
+        "-c", String("http.lowSpeedLimit=", env_int("GIT_LOW_SPEED_LIMIT", 1000)),
+        "-c", String("http.lowSpeedTime=", env_int("GIT_LOW_SPEED_SECONDS", 60)),
+    ]
 
 
 def transient_git_error(output: String) -> Bool:
@@ -270,7 +288,7 @@ def transient_git_error(output: String) -> Bool:
     return True
 
 
-def git_clone(repo: String, dir: String, flags: String) raises -> Tuple[Int, String]:
+def git_clone(repo: String, dir: String, flags: List[String]) raises -> Tuple[Int, String]:
     """`git clone --quiet --bare <flags>` of `repo` from GitHub into `dir`,
     each try killed after `git_timeout_ms()` and tried again, with
     exponential backoff and jitter, up to `GIT_RETRIES` (default 3) more
@@ -280,14 +298,17 @@ def git_clone(repo: String, dir: String, flags: String) raises -> Tuple[Int, Str
     var timeout = git_timeout_ms()
     var attempt = 1
     while True:
-        _ = _sh(String("mkdir -p '", _workdir(), "' && rm -rf '", dir, "'"))
-        var r = _sh(
-            String(
-                git_net(), " clone --quiet --bare", flags,
-                " https://github.com/", repo, ".git '", dir, "' 2>&1",
-            ),
-            timeout,
-        )
+        make_dirs(_workdir())
+        remove_tree(dir)
+        var args = git_net()
+        args.append("clone")
+        args.append("--quiet")
+        args.append("--bare")
+        for f in flags:
+            args.append(f)
+        args.append(String("https://github.com/", repo, ".git"))
+        args.append(dir)
+        var r = git(args, timeout, STDERR_MERGE)
         if r[0] == 0:
             return r^
         var err = String(r[1].strip())
@@ -303,89 +324,177 @@ def git_clone(repo: String, dir: String, flags: String) raises -> Tuple[Int, Str
 
 def _show(dir: String, sha: String, file: String) raises -> String:
     """The contents of `file` at `sha`, or "" if it isn't there."""
-    var r = _sh(String("git -C '", dir, "' show '", sha, ":", file, "' 2>/dev/null"))
+    var r = git(["-C", dir, "show", String(sha, ":", file)], stderr=STDERR_DROP)
     if r[0] != 0:
         return String()
     return r[1]
 
 
 struct _State:
-    """The commit being read, and what is true after it: which manifest
-    and lock files exist (`pixi_toml` ... `bazel`), the running totals of
-    Mojo `lines` and `files`, and the `tool`, `version` and `source` in
-    force. Totals and files are carried from commit to commit; `_finish`
-    turns the state into a row. `touched` is whether this commit added,
-    removed or changed a manifest or lock file, which is the only time
-    the version is read again."""
+    """The commit being read, and what is true after it: which files that
+    decide the tooling exist (`f`, and the Python manifests in `py_files`),
+    how many recipes of each kind there are, the running totals of Mojo
+    `lines` and `files`, and the `tool`, `pack`, `version` and `source` in
+    force. All of it is carried from commit to commit; `_finish` turns the
+    state into a row. `touched` is whether this commit added, removed or
+    changed a file that can name the version (`is_tool_file`), the only
+    time the version is read again; `py_touched` whether it changed a Python
+    manifest, which is then read again for its Mojo dependency and its
+    `[tool.*]` tables."""
 
-    var pixi_toml: Bool
-    var pixi_lock: Bool
-    var mojoproject: Bool
-    var magic_lock: Bool
-    var bazel: Bool
+    var f: ToolFiles
+    var py_files: List[String]
+    """The Python manifests (`is_python_manifest`) that exist, in the order
+    they appeared."""
+    var rattler: Int
+    var conda_build: Int
     var touched: Bool
+    var py_touched: Bool
     var lines: Int64
     var files: Int64
     var sha: String
     var at: Int64
+    var subject: String
     var seq: Int64
     var tool: String
+    var pack: String
     var version: String
     var source: String
 
     def __init__(out self):
+        self.f = ToolFiles()
+        self.py_files = List[String]()
+        self.rattler = 0
+        self.conda_build = 0
         self.sha = String()
         self.at = 0
+        self.subject = String()
         self.seq = 0
         self.tool = String("none")
+        self.pack = String("none")
         self.version = String()
         self.source = String()
-        self.pixi_toml = False
-        self.pixi_lock = False
-        self.mojoproject = False
-        self.magic_lock = False
-        self.bazel = False
         self.touched = False
+        self.py_touched = False
         self.lines = 0
         self.files = 0
 
     def mark(mut self, path: String, exists: Bool):
         """Records that `path` now exists (or no longer does), if it is a
-        file that decides the tooling or the version."""
+        file that decides the tooling, the packaging or the version."""
+        var kind = recipe_kind(path)
+        if kind == "rattler":
+            self.rattler += 1 if exists else -1
+            return  # the packaging changes, nothing else
+        if kind == "conda-build":
+            self.conda_build += 1 if exists else -1
+            return
         if path == "pixi.toml":
-            self.pixi_toml = exists
+            self.f.pixi_toml = exists
         elif path == "pixi.lock":
-            self.pixi_lock = exists
+            self.f.pixi_lock = exists
         elif path == "mojoproject.toml":
-            self.mojoproject = exists
+            self.f.mojoproject = exists
         elif path == "magic.lock":
-            self.magic_lock = exists
+            self.f.magic_lock = exists
+        elif path == "uv.lock":
+            self.f.uv_lock = exists
+        elif path == "poetry.lock":
+            self.f.poetry_lock = exists
+        elif path == "pdm.lock":
+            self.f.pdm_lock = exists
+        elif is_python_manifest(path):
+            var at = -1
+            for i in range(len(self.py_files)):
+                if self.py_files[i] == path:
+                    at = i
+            if exists and at < 0:
+                self.py_files.append(path)
+            elif not exists and at >= 0:
+                _ = self.py_files.pop(at)
+            self.py_touched = True
         elif is_bazel_file(path):
-            self.bazel = exists
+            self.f.bazel = exists
             return  # the tooling changes, the Mojo version doesn't
         else:
             return
         self.touched = True
 
+    def any_file(self) -> Bool:
+        """Whether any file that can name the version is left."""
+        return (
+            self.f.pixi_toml or self.f.pixi_lock or self.f.mojoproject
+            or self.f.magic_lock or self.f.uv_lock or self.f.poetry_lock
+            or self.f.pdm_lock or len(self.py_files) > 0
+        )
+
+
+def _read_python(dir: String, sha: String, mut st: _State) raises:
+    """Reads the Python manifests at `sha` again: whether one depends on
+    Mojo (`py_mojo`), and the `pyproject.toml`'s `[tool.*]` tables."""
+    st.f.py_mojo = False
+    var pyproject = False
+    for p in st.py_files:
+        var text = _show(dir, sha, p)
+        if p == "pyproject.toml":
+            pyproject = True
+            pyproject_tables(text, st.f)
+        if names_mojo_pkg(p, text):
+            st.f.py_mojo = True
+    if not pyproject:
+        pyproject_tables(String(), st.f)
+
 
 def _version(dir: String, sha: String, st: _State) raises -> Tuple[String, String]:
     """The Mojo version at `sha` and the file it came from, or two empty
     strings. Lock files win over manifests: a lock names the version that
-    was actually resolved, a manifest only the range asked for."""
-    for lock in ["magic.lock", "pixi.lock"]:
-        if (lock == "magic.lock" and st.magic_lock) or (
-            lock == "pixi.lock" and st.pixi_lock
-        ):
-            var v = lock_version(_show(dir, sha, lock))
+    was actually resolved, a manifest only the range asked for. Python
+    files count only when a Python manifest depends on Mojo (`py_mojo`),
+    and the `pyproject.toml` also when pixi reads it."""
+    var locks = List[String]()
+    if st.f.magic_lock:
+        locks.append("magic.lock")
+    if st.f.pixi_lock:
+        locks.append("pixi.lock")
+    for l in locks:
+        var v = lock_version(_show(dir, sha, l))
+        if v.byte_length() > 0:
+            return (v^, l)
+    var pylocks = List[String]()
+    if st.f.py_mojo:
+        if st.f.uv_lock:
+            pylocks.append("uv.lock")
+        if st.f.poetry_lock:
+            pylocks.append("poetry.lock")
+        if st.f.pdm_lock:
+            pylocks.append("pdm.lock")
+    for l in pylocks:
+        var v = pylock_version(_show(dir, sha, l))
+        if v.byte_length() > 0:
+            return (v^, l)
+    var manifests = List[String]()
+    if st.f.pixi_toml:
+        manifests.append("pixi.toml")
+    if st.f.mojoproject:
+        manifests.append("mojoproject.toml")
+    for m in manifests:
+        var v = manifest_version(_show(dir, sha, m))
+        if v.byte_length() > 0:
+            return (v^, m)
+    if st.f.py_mojo or st.f.pyproject_pixi:
+        for p in st.py_files:
+            if p != "pyproject.toml" and not st.f.py_mojo:
+                continue
+            # A pixi or poetry table line (`mojo = ">=1.2"`), else a PEP 508
+            # pin (`"mojo>=1.2.0,<1.3"`).
+            var text = _show(dir, sha, p)
+            var v = manifest_version(text) if p == "pyproject.toml" else String()
+            if v.byte_length() == 0 or v == "*":
+                var pin = pin_version(text)
+                if pin.byte_length() > 0:
+                    v = pin^
             if v.byte_length() > 0:
-                return (v^, String(lock))
-    for m in ["pixi.toml", "mojoproject.toml"]:
-        if (m == "pixi.toml" and st.pixi_toml) or (
-            m == "mojoproject.toml" and st.mojoproject
-        ):
-            var v = manifest_version(_show(dir, sha, m))
-            if v.byte_length() > 0:
-                return (v^, String(m))
+                return (v^, p)
     return (String(), String())
 
 
@@ -393,16 +502,17 @@ def _finish(repo: String, dir: String, mut st: _State, mut out: History) raises:
     """Closes the commit `st` is at: one row, and any migrations."""
     if st.sha.byte_length() == 0:
         return
-    var new_tool = tooling(
-        st.pixi_toml, st.pixi_lock, st.mojoproject, st.magic_lock, st.bazel
-    )
+    if st.py_touched:
+        var sha = st.sha
+        _read_python(dir, sha, st)
+    var new_tool = tooling(st.f)
+    var new_pack = packaging(st.rattler > 0, st.conda_build > 0)
     if st.touched:
         # Only a commit that touches a manifest costs `git show`s. A manifest
         # that names no version (yet) leaves the earlier version standing; the
         # version is cleared only when no manifest or lock file is left.
         var v = _version(dir, st.sha, st)
-        var any_file = st.pixi_toml or st.pixi_lock or st.mojoproject or st.magic_lock
-        if v[0].byte_length() > 0 or not any_file:
+        if v[0].byte_length() > 0 or not st.any_file():
             if v[0] != st.version:
                 out.migrations.append(
                     MigrationRow(repo, st.sha, st.at, "mojo_version", st.version, v[0])
@@ -414,14 +524,20 @@ def _finish(repo: String, dir: String, mut st: _State, mut out: History) raises:
             MigrationRow(repo, st.sha, st.at, "tooling", st.tool, new_tool)
         )
         st.tool = new_tool
+    if new_pack != st.pack:
+        out.migrations.append(
+            MigrationRow(repo, st.sha, st.at, "packaging", st.pack, new_pack)
+        )
+        st.pack = new_pack
     out.commits.append(
         CommitRow(
             repo, st.sha, st.at, st.seq, st.lines, st.files, st.tool,
-            st.version, st.source,
+            st.version, st.source, st.pack, st.subject,
         )
     )
     st.seq += 1
     st.touched = False
+    st.py_touched = False
 
 
 def _path_of(line: StringSlice) -> String:
@@ -441,7 +557,7 @@ def _path_of(line: StringSlice) -> String:
 
 def _parse_log(repo: String, dir: String, log: String, mut out: History) raises:
     """Turns the `git log` of `_read_history` into `out.commits` and
-    `out.migrations`. Per commit git prints the `@@sha time` header, then
+    `out.migrations`. Per commit git prints the `@@sha time subject` header, then
     its `--numstat` lines (`added<TAB>deleted<TAB>path`), then its
     `--summary` lines (` create mode ...` / ` delete mode ...`). A commit is
     therefore complete only when the next header (or the end) arrives, which
@@ -450,9 +566,12 @@ def _parse_log(repo: String, dir: String, log: String, mut out: History) raises:
     for line in log.split("\n"):
         if line.startswith("@@"):
             _finish(repo, dir, st, out)
-            var parts = String(line[byte=2:]).split(" ")
+            # `@@<sha> <time> <subject>`: the subject may have spaces of its own.
+            var head = String(line[byte=2:])
+            var parts = head.split(" ", 2)
             st.sha = String(parts[0])
             st.at = Int64(Int(parts[1])) * 1_000_000 if len(parts) > 1 else 0
+            st.subject = cut_subject(parts[2]) if len(parts) > 2 else String()
             continue
         # Files are counted from the summary (with `--no-renames` a rename is
         # a delete plus a create) and lines from numstat, so both follow the
@@ -475,8 +594,10 @@ def _parse_log(repo: String, dir: String, log: String, mut out: History) raises:
             # Binary files print "-" for both counts.
             if is_mojo_file(p) and String(cols[0]) != "-":
                 st.lines += Int64(Int(cols[0])) - Int64(Int(cols[1]))
-            if p == "pixi.toml" or p == "pixi.lock" or p == "mojoproject.toml" or p == "magic.lock":
+            if is_tool_file(p):
                 st.touched = True
+                if is_python_manifest(p):
+                    st.py_touched = True
     _finish(repo, dir, st, out)
 
 
@@ -492,7 +613,7 @@ def read_history(repo: String) raises -> History:
     except e:
         if safe_repo(repo):
             try:
-                _ = _sh(String("rm -rf '", _clone_dir(repo), "'"))
+                remove_tree(_clone_dir(repo))
             except:
                 pass
         out = History.empty(repo)
@@ -511,7 +632,7 @@ def read_tags(repo: String) raises -> History:
         return out^
     var dir = _clone_dir(repo)
     try:
-        var clone = git_clone(repo, dir, " --filter=blob:none")
+        var clone = git_clone(repo, dir, ["--filter=blob:none"])
         if clone[0] != 0:
             out.error = String("git clone failed: ", clone[1].strip())
         else:
@@ -520,7 +641,7 @@ def read_tags(repo: String) raises -> History:
         out = History.empty(repo)
         out.error = String("reading its tags: ", e)
     try:
-        _ = _sh(String("rm -rf '", dir, "'"))
+        remove_tree(dir)
     except:
         pass
     return out^
@@ -544,22 +665,20 @@ def _read_history(repo: String, mut out: History) raises:
         out.error = String("not a repository name: ", repo)
         return
     var dir = _clone_dir(repo)
-    var clone = git_clone(repo, dir, "")
+    var clone = git_clone(repo, dir, List[String]())
     if clone[0] != 0:
         out.error = String("git clone failed: ", clone[1].strip())
-        _ = _sh(String("rm -rf '", dir, "'"))
+        remove_tree(dir)
         return
     # `--first-parent --diff-merges=first-parent` follows the default branch
     # only, with a merge shown as its diff against the first parent: a pull
     # request counts once, and the lines add up to the branch's real size.
     # `--reverse` puts the oldest commit first so the totals accumulate.
-    var log = _sh(
-        String(
-            "git -C '", dir, "' -c core.quotepath=off log --first-parent",
-            " --reverse --no-renames --diff-merges=first-parent",
-            " --format='@@%H %ct' --numstat --summary HEAD",
-        )
-    )
+    var log = git([
+        "-C", dir, "-c", "core.quotepath=off", "log", "--first-parent",
+        "--reverse", "--no-renames", "--diff-merges=first-parent",
+        String("--format=", LOG_FORMAT), "--numstat", "--summary", "HEAD",
+    ])
     if log[0] != 0:
         out.error = String("git log failed: ", log[1].strip())
     else:
@@ -571,4 +690,4 @@ def _read_history(repo: String, mut out: History) raises:
                 pass  # the history stands without its tags
         except e:
             out.error = String("reading its git log: ", e)
-    _ = _sh(String("rm -rf '", dir, "'"))
+    remove_tree(dir)

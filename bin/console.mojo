@@ -58,6 +58,7 @@ from console_cache import RETRY_SECS, Cache, refresh_secs
 from console_how import changelog, how, optimizations
 from console_layout import EDGE_CACHE, _empty, _page
 from console_list import repos_page, search
+from console_live import LiveData, LiveSite, live_refresher
 from console_migrations import migrations_page
 from console_overview import overview
 from console_repo import repo_page
@@ -309,11 +310,19 @@ def main() raises:
     sh.unsafe_write(Shared(cache, checks, model))
     var refresher = ThreadHandle.spawn[_refresher](OpaquePtr(unsafe_from_address=Int(sh)))
     refresher.detach()
+    # The Live page reads its own small table every minute, apart from the rest.
+    var pl = unsafe_alloc[Swap[LiveData]](1)
+    pl.unsafe_write(Swap[LiveData](LiveData()))
+    var live = Int(pl)
+    var live_thread = ThreadHandle.spawn[live_refresher](OpaquePtr(unsafe_from_address=live))
+    live_thread.detach()
     var r = Router()
     r.get("/", Site(0, cache, checks, model))
     r.get("/repos", Site(1, cache, checks, model))
     r.get("/migrations", Site(8, cache, checks, model))
     r.get("/versions", _moved_to_migrations)
+    r.get("/live", LiveSite(live, False))
+    r.get("/api/live", LiveSite(live, True))
     r.get("/how", how)
     r.get("/how/optimizations", optimizations)
     r.get("/how/changelog", changelog)

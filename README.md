@@ -4,7 +4,7 @@ The code behind [Mojourney: the Mojo ecosystem census](https://mojourney.dev).
 
 A lake of GitHub activity built on [magmalake](https://magmalake.org), and
 a console that shows how Mojo repos have grown. Everything is Mojo, in
-one pixi project: five [orca](https://github.com/magmalake/orca.mojo)
+one pixi project: five [orca](https://github.com/morca-dev/morca)
 pipelines write Iceberg tables, the project's own `orca` schedules them,
 and a [flare](https://github.com/magmalake/flare_mlake) app reads the
 tables.
@@ -85,18 +85,21 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   `mojo.repos`: each snapshot mojo_repos commits starts runs for the
   repositories it adds. Each repository is cloned in a
   dista task and its first-parent history read into `mojo.commits` (lines
-  and files of Mojo at each commit, the tooling, none → magic → pixi → bazel, and
-  the Mojo version the lock file or manifest names), `mojo.migrations`
-  (each change of tooling or Mojo version) and `mojo.tags` (each git tag:
-  the commit, annotated or not, its date, and the tooling and Mojo version
-  at that commit). A repository already in a table isn't written to it
+  and files of Mojo at each commit, the tooling (none, magic, pixi, bazel,
+  or a Python build tool that installs Mojo from PyPI: uv, poetry, pdm,
+  pip), the packaging (a rattler-build `recipe.yaml`, a conda-build
+  `meta.yaml`, or none) and the Mojo version the lock file or manifest
+  names), `mojo.migrations` (each change of tooling, packaging or Mojo
+  version) and `mojo.tags` (each git tag: the commit, annotated or not, its
+  date, and the tooling, packaging and Mojo version at that commit). A repository already in a table isn't written to it
   again; one with a history and no tags is cloned without file contents
   for its tags only, so `orca backfill --rerun mojo_history @all` fills
   `mojo.tags` for repositories read before tags were.
 - **`pipelines/mojo_retool.mojo`**: a one-off that re-reads the histories
   mojo_history already read and replaces their rows (used when `tooling`
   learned `bazel`, a root `MODULE.bazel`/`WORKSPACE`/`BUILD.bazel`, which
-  outranks pixi: `orca backfill --rerun mojo_retool @all`).
+  outranks pixi, and again for the Python build tools and `packaging`:
+  `orca backfill --rerun mojo_retool @all`).
 - **`pipelines/mojo_versions.mojo`**: keyed by repository like mojo_history
   (50 a run, a sensor on `mojo.repos`), for the repositories whose lock file
   and manifest name no Mojo version (early projects, installed with `modular
@@ -170,6 +173,13 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   7 s on four arm64 cores. The model isn't in the image: a run downloads
   what `MOJO_EMBED_MODEL` lacks (133 MB) from Hugging Face, pinned to a
   revision, and checks the weights' hash (`model_rev`).
+- **`pipelines/mojo_live.mojo`**: hourly partitions (orca `Hourly`), one run
+  an hour that polls every 20 minutes until the hour ends: GitHub's GraphQL
+  API gives the default-branch heads of 100 repositories a query (1 point),
+  and each repository whose head moved gives its latest commits. The new
+  ones go to `mojo.live_commits` with the time the poll saw them, the heads
+  to `mojo.live_heads`. The console's `/live` page reads the last two days
+  of it every minute.
 - **`bin/console.mojo`**: an overview (`/`: repos, commits and lines of
   Mojo with their change over 30 days, repos per Mojo version family,
   monthly curves from `mojo.commits`, adoption of the newest version,
@@ -198,7 +208,7 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
 What the magmalake libraries were missing while this was built is tracked as
 GitHub issues in each library's repository (orca.mojo, iceberg.mojo,
 dista.mojo, json_mlake, flare_mlake, deflate.mojo, threads.mojo, and mojoshelf);
-the census's own open work is in [this repository's issues](https://github.com/magmalake/mojo-census/issues).
+the census's own open work is in [this repository's issues](https://github.com/morca-dev/census/issues).
 
 ## Run it locally
 
@@ -392,11 +402,11 @@ comment. `Dockerfile.orca` puts it in the image at `/opt/orca/orca.toml`
 (`ORCA_CONFIG`), next to the pipelines (`ORCA_PIPELINES_DIR`), so on the
 server registering is `docker exec scheduler orca register` (orca after
 0.10.0). To change a setting: edit `orca.toml`, merge, deploy the new image,
-register again. `mojo_retool` is a one-off and isn't in the file.
+register again. `mojo_retool` has no schedule and runs only by hand, but it is in the file too, so registering keeps it available for a release's upgrade steps (`upgrade.toml`).
 
 ### The dev stack
 
-orca.mojo's [dev stack](https://github.com/magmalake/orca.mojo/blob/main/docs/hetzner.md#a-dev-stack)
+orca.mojo's [dev stack](https://github.com/morca-dev/morca/blob/main/docs/hetzner.md#a-dev-stack)
 is a second, smaller server for trying a release or a deploy-script change
 before production. Its scheduler reads `orca.dev.toml` (the image has it at
 `/opt/orca/orca.dev.toml`; the stack sets `ORCA_CONFIG` to it): the same
@@ -404,7 +414,7 @@ pipelines, without fills or the bgent pool, so it never backfills from 2023.
 CI keeps the two files' pipelines the same.
 
 Both stacks' images come from the `dev` branch: a push to `dev` builds and
-pushes `ghcr.io/magmalake/orca:<short sha>` and `:dev`. main builds no image
+pushes `ghcr.io/morca-dev/census:<short sha>` and `:dev`. main builds no image
 (`:latest` stays at main's last one, `c1f9fd7`). To release, bring `dev` up
 to main (`git push origin origin/main:dev`, or a merge of main into `dev` when
 it has commits of its own), deploy the short sha to the dev stack, then the
@@ -420,7 +430,7 @@ scheduler, the UI, Postgres, the site, gharchive's fill, mojo_repos and
 mojo_stats. The worker holds no database credentials and needs only outbound
 HTTPS to the UI and to the bucket, no inbound ports. The census ran it on
 "bgent", an Apple-silicon Mac running Docker: arm64 like the CAX21, so the same
-image. (orca's [docs/workers.md](https://github.com/magmalake/orca.mojo/blob/main/docs/workers.md)
+image. (orca's [docs/workers.md](https://github.com/morca-dev/morca/blob/main/docs/workers.md)
 and the [Workers page](https://mlake.dev/s/orca/docs/workers) cover the
 general case; remote workers need orca 0.14.0.) It did that while gharchive's
 backfill had the CAX21's cores; since 2026-11-09 they run on the server
@@ -450,7 +460,7 @@ see a file bind-mounted from under `~/.config`: the mount shows up as an empty
 directory.
 
 ```sh
-docker run --rm -i --entrypoint sh -v orca-worker-secrets:/s ghcr.io/magmalake/orca:<tag> \
+docker run --rm -i --entrypoint sh -v orca-worker-secrets:/s ghcr.io/morca-dev/census:<tag> \
   -c 'cat > /s/token && chmod 600 /s/token' < worker-token
 ```
 
@@ -463,7 +473,7 @@ docker run -d --name orca-worker --restart always \
   -e ORCA_WAREHOUSE=s3://census-mlake-dev/warehouse -e ORCA_LOGS=s3://census-mlake-dev/logs \
   -e AWS_REGION=nbg1 -e AWS_ENDPOINT_URL_S3=https://nbg1.your-objectstorage.com \
   -e MOJO_HISTORY_WORKDIR=/work/clones -v census-work:/work \
-  ghcr.io/magmalake/orca:<tag> worker --pool bgent --max-runs 3 --remote https://orca.mojourney.dev --token-file /etc/orca/w/token
+  ghcr.io/morca-dev/census:<tag> worker --pool bgent --max-runs 3 --remote https://orca.mojourney.dev --token-file /etc/orca/w/token
 ```
 
 `--max-runs 3` lets the three pipelines run at once; the worker admits runs

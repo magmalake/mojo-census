@@ -1,9 +1,13 @@
-"""Reads repositories' git histories again and replaces their rows in the
-commits, migrations and tags tables.
+"""A backfill run by hand, once each time the history reader learns
+something new: reads again the git histories mojo_history already read and
+replaces their commits, migrations and tags.
 
-A one-off for when `history.read_history` learns something new about the
-commits it already read (Bazel as a tooling, 2026-11): keyed by the `repo`
-column of `mojo.repos` like mojo_history, 50 a run, and run by hand:
+New repositories don't need it: mojo_history reads them with the current
+`history.read_history`, the same reader this pipeline runs. It has no
+schedule and no sensor; each change to what that reader detects (Bazel as a
+tooling, 2026-11; Python build tools and packaging, #116) is followed by
+one run over every repository. It is keyed by the `repo` column of
+`mojo.repos` like mojo_history, 50 a run:
 
     orca backfill --rerun mojo_retool @all
 
@@ -22,7 +26,7 @@ from std.os import getenv, setenv
 from dista import ObjectRef, Task
 from orca import Ctx, Gather, Name, Pipeline, Step, Tasks, orca_main
 from orca.keyed import Keyed
-from orca.tables import scan, table
+from orca.tables import ensure_table, scan, table
 from dista import Seq
 from parquet import RecordBatch
 
@@ -35,7 +39,7 @@ from historyrows import (
     tag_rows,
     tags_batch,
 )
-from lake import COMMITS, MIGRATIONS, REPOS, TAGS
+from lake import COMMITS, MIGRATIONS, REPOS, TAGS, commits_schema, migrations_schema, tags_schema
 from replace import replace_files
 from cols import col, i64_at, str_at
 
@@ -82,9 +86,11 @@ def retool(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     by partition: the whole table is read, the rows of the re-read
     repositories are dropped, and everything is written back with the new
     rows in one `overwrite` per table."""
-    var commits_t = table(ctx, COMMITS)
-    var migrations_t = table(ctx, MIGRATIONS)
-    var tags_t = table(ctx, TAGS)
+    # `ensure_table` adds the columns the schemas gained since the tables
+    # were made (`packaging`), so the rows written back can carry them.
+    var commits_t = ensure_table(ctx, COMMITS, commits_schema())
+    var migrations_t = ensure_table(ctx, MIGRATIONS, migrations_schema())
+    var tags_t = ensure_table(ctx, TAGS, tags_schema())
     # Everything the tables hold now, by repository.
     var commits_files = _all_files(ctx, COMMITS)
     var migrations_files = _all_files(ctx, MIGRATIONS)

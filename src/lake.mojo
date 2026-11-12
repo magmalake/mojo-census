@@ -26,6 +26,9 @@ comptime CANDIDATES = "gharchive.candidates"
 comptime REPO_HOUR = "gharchive.repo_hour"
 comptime GH_RELEASES = "gharchive.releases"
 comptime REPO_EMBEDDINGS = "mojo.repo_embeddings"
+comptime ISSUES = "mojo.issues"
+comptime LIVE_COMMITS = "mojo.live_commits"
+comptime LIVE_HEADS = "mojo.live_heads"
 
 comptime EVENTS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -67,8 +70,12 @@ comptime COMMITS_SCHEMA = (
     '{"id":6,"name":"mojo_files","required":true,"type":"long"},'
     '{"id":7,"name":"tooling","required":true,"type":"string"},'
     '{"id":8,"name":"mojo_version","required":false,"type":"string"},'
-    '{"id":9,"name":"version_source","required":false,"type":"string"}]}'
+    '{"id":9,"name":"version_source","required":false,"type":"string"},'
+    '{"id":10,"name":"packaging","required":false,"type":"string"},'
+    '{"id":11,"name":"subject","required":false,"type":"string"}]}'
 )
+"""`packaging` and `subject` came later (ensure_table adds them; rows from
+before read them as null until mojo_retool reads their history again)."""
 
 comptime MIGRATIONS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -168,11 +175,12 @@ comptime TAGS_SCHEMA = (
     '{"id":4,"name":"annotated","required":true,"type":"boolean"},'
     '{"id":5,"name":"tagged_at","required":false,"type":"timestamptz"},'
     '{"id":6,"name":"tooling","required":false,"type":"string"},'
-    '{"id":7,"name":"mojo_version","required":false,"type":"string"}]}'
+    '{"id":7,"name":"mojo_version","required":false,"type":"string"},'
+    '{"id":8,"name":"packaging","required":false,"type":"string"}]}'
 )
 """Each repository's git tags (mojo_history): the commit a tag points at
 (peeled), the tagger's date for an annotated tag or the commit's for a
-lightweight one, and the tooling and Mojo version at that commit when it
+lightweight one, and the tooling, Mojo version and packaging at that commit when it
 is on the first-parent history mojo.commits has."""
 
 comptime REPO_VERSIONS_SCHEMA = (
@@ -409,6 +417,61 @@ def tags_schema() raises -> Schema:
 
 def repo_versions_schema() raises -> Schema:
     return Schema.parse(REPO_VERSIONS_SCHEMA)
+
+
+comptime ISSUES_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"number","required":true,"type":"long"},'
+    '{"id":3,"name":"kind","required":true,"type":"string"},'
+    '{"id":4,"name":"state","required":true,"type":"string"},'
+    '{"id":5,"name":"title","required":true,"type":"string"},'
+    '{"id":6,"name":"labels","required":false,"type":'
+    '{"type":"list","element-id":7,"element":"string","element-required":true}},'
+    '{"id":8,"name":"author","required":false,"type":"string"},'
+    '{"id":9,"name":"comments","required":true,"type":"long"},'
+    '{"id":10,"name":"created_at","required":true,"type":"timestamptz"},'
+    '{"id":11,"name":"updated_at","required":true,"type":"timestamptz"},'
+    '{"id":12,"name":"closed_at","required":false,"type":"timestamptz"},'
+    '{"id":13,"name":"merged_at","required":false,"type":"timestamptz"},'
+    '{"id":14,"name":"fetched_at","required":true,"type":"timestamptz"}]}'
+)
+"""One row per issue or pull request of a census repository (mojo_issues),
+as GitHub had it when last fetched: `kind` is `issue` or `pr`, `state`
+`open` or `closed`. Titles only, no bodies."""
+
+
+def issues_schema() raises -> Schema:
+    return Schema.parse(ISSUES_SCHEMA)
+
+
+comptime LIVE_COMMITS_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"sha","required":true,"type":"string"},'
+    '{"id":3,"name":"subject","required":false,"type":"string"},'
+    '{"id":4,"name":"committed_at","required":true,"type":"timestamptz"},'
+    '{"id":5,"name":"seen_at","required":true,"type":"timestamptz"}]}'
+)
+"""Commits to census repos' default branches as the live poller (mojo_live)
+saw them: appended a poll at a time, newest last."""
+
+comptime LIVE_HEADS_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"head","required":false,"type":"string"},'
+    '{"id":3,"name":"seen_at","required":true,"type":"timestamptz"}]}'
+)
+"""Each census repo's default-branch head at the poller's last look,
+rewritten whole by a poll that saw one move."""
+
+
+def live_commits_schema() raises -> Schema:
+    return Schema.parse(LIVE_COMMITS_SCHEMA)
+
+
+def live_heads_schema() raises -> Schema:
+    return Schema.parse(LIVE_HEADS_SCHEMA)
 
 
 def repo_embeddings_schema() raises -> Schema:
