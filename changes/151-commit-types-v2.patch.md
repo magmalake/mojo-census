@@ -1,0 +1,1 @@
+- **Fewer commits typed other**: tags, more prefixes (`toolchain:`, `accel:`, `migrate:`), Mojo release numbers without the word Mojo, and `Initial commit` get a type; on a sample, `other` went from 49% to 43%. (#151)

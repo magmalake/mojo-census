@@ -3,20 +3,26 @@ for the repo page's commits and the Migrations page.
 
 `commit_type` reads the subject the way a person skims it:
 
+0. Leading tags go (`[skip ci] Merge ...`, `[gpt2] Add ...`), unless one
+   names a type (`[release]`, `[doc]`); `[pre-commit.ci]` and dependabot
+   are `chore`.
 1. `Merge pull request ...` / `Merge branch ...` is `merge`.
-2. A conventional-commit prefix (`fix:`, `feat(api):`, `docs!:`) names the
-   type (`CONVENTIONAL`).
+2. A conventional-commit prefix (`fix:`, `feat(api):`, `docs!:`, also
+   `toolchain:`, `accel:`, `repair:`, `readme:`) names the type
+   (`_conventional`). A prefix it doesn't know (`migrate:`, `ffi:`) still
+   counts for steps 3 and 4.
 3. A commit that changed the Mojo version (it has a `mojo_version` row in
    mojo.migrations), or whose subject says it moved to a Mojo version
    (`update to Mojo 24.3`, `bump nightly to dev2026080206`), is `version`.
 4. A subject about migrating (`migrate`, `deprecated`, `port to Mojo`) is
    `migration`: work that follows a version change.
-5. Otherwise the first word (`Fix`, `Added`, `Refactor`, `Update README`),
-   else `other`.
+5. Otherwise the first word (`Fix`, `Added`, `Refactor`, `Update README`,
+   `Initial commit`), else `other`.
 
 About a third of subjects carry a conventional prefix and the first word
-labels another quarter; on 2,992 subjects of 80 sampled census repos, 39%
-stay `other`. Those are for a nearest-neighbour labeller over subject
+labels another quarter. On 1,546 subjects from 80 sampled census repos
+(version changes left out), the second rules (`COMMIT_TYPES_VERSION` 2)
+left 43% `other`, down from 49%. Those are for a nearest-neighbour labeller over subject
 embeddings, as the categories (#113) do it, once 100 hand-labelled commits
 can check it.
 """
@@ -24,7 +30,7 @@ can check it.
 from model import Migration, Point
 
 
-comptime COMMIT_TYPES_VERSION = 1
+comptime COMMIT_TYPES_VERSION = 2
 """Bumped when the rules change, so the console can say which it used."""
 
 
@@ -67,17 +73,19 @@ def _conventional(t: String) -> String:
         return "feature"
     if t == "fix" or t == "bugfix" or t == "hotfix":
         return "fix"
-    if t == "docs" or t == "doc":
+    if t == "docs" or t == "doc" or t == "readme":
         return "docs"
     if t == "test" or t == "tests":
         return "test"
     if t == "refactor" or t == "style":
         return "refactor"
-    if t == "perf" or t == "bench":
+    if t == "perf" or t == "bench" or t == "accel" or t == "speed" or t == "optimize":
         return "perf"
+    if t == "repair" or t == "bug":
+        return "fix"
     if (
         t == "chore" or t == "build" or t == "ci" or t == "release"
-        or t == "deps" or t == "revert"
+        or t == "deps" or t == "revert" or t == "toolchain"
     ):
         return "chore"
     return String()
@@ -87,14 +95,15 @@ def _first_word(w: String) -> String:
     """The type a subject's first word names; empty for none."""
     if (
         w == "fix" or w == "fixed" or w == "fixes" or w == "fixing" or w == "bugfix"
-        or w == "hotfix" or w == "typo" or w == "correct" or w == "corrected"
+        or w == "bugfixes" or w == "hotfix" or w == "typo" or w == "correct" or w == "corrected"
         or w == "resolve"
     ):
         return "fix"
     if (
         w == "add" or w == "added" or w == "adds" or w == "adding" or w == "implement"
         or w == "implemented" or w == "create" or w == "created" or w == "introduce"
-        or w == "support" or w == "enable" or w == "new"
+        or w == "support" or w == "enable" or w == "new" or w == "enhance"
+        or w == "enhanced" or w == "enhancing"
     ):
         return "feature"
     if (
@@ -110,7 +119,7 @@ def _first_word(w: String) -> String:
         return "docs"
     if w == "test" or w == "tests":
         return "test"
-    if w == "revert" or w == "release":
+    if w == "revert" or w == "release" or w == "bump" or w == "bumped":
         return "chore"
     return String()
 
@@ -170,8 +179,8 @@ def _is_version_number(w: String) -> Bool:
 def _is_bump(w: String) -> Bool:
     return (
         w == "bump" or w == "bumped" or w == "upgrade" or w == "upgraded"
-        or w == "update" or w == "updated" or w == "pin" or w == "pinned"
-        or w == "switch"
+        or w == "update" or w == "updated" or w == "updates" or w == "pin" or w == "pinned"
+        or w == "switch" or w == "lock" or w == "locked"
     )
 
 
@@ -193,13 +202,21 @@ def _says_version(ws: List[String]) -> Bool:
             for j in range(i + 1, min(i + 4, len(ws))):
                 if _is_version_number(ws[j]) or ws[j] == "version" or ws[j] == "latest":
                     return True
-    # `update to 26.2`: a Modular release number on its own.
-    for i in range(1, len(ws)):
-        if ws[i - 1] == "to" and _is_version_number(ws[i]):
-            var w = ws[i]
-            if w.startswith("24.") or w.startswith("25.") or w.startswith("26.") or w.startswith("dev20"):
-                return True
+    # `update to 26.2`, `24.2 updates`: a Modular release number with a bump
+    # word, without the word Mojo.
+    for i in range(len(ws) if bump else 0):
+        if _is_release(ws[i]):
+            return True
     return False
+
+
+def _is_release(w: String) -> Bool:
+    """A Modular release number: `24.2`, `v25.1.0`, `26.1.0.dev2026...`,
+    `dev2026080206` (not `1.2.0`, which many libraries use too)."""
+    var v = String(w[byte=1:]) if w.startswith("v") else w
+    if not _is_version_number(v):
+        return False
+    return v.startswith("24.") or v.startswith("25.") or v.startswith("26.") or v.startswith("dev20")
 
 
 def _says_migration(ws: List[String]) -> Bool:
@@ -217,6 +234,19 @@ def commit_type(subject: String, version_change: Bool) -> String:
     """The type of a commit with this subject; `version_change` when
     mojo.migrations has a Mojo version change at it."""
     var s = subject.lower()
+    # Leading tags, `[skip ci] Merge pull request ...`, `[pre-commit.ci] ...`.
+    while s.startswith("["):
+        var close = s.find("]")
+        if close < 0:
+            break
+        var tag = String(s[byte=1:close])
+        if "pre-commit" in tag or "dependabot" in tag:
+            return "chore"
+        # `[release] ...`, `[doc] ...`: a tag that names a type is read as
+        # the subject's first word, as before.
+        if _conventional(tag).byte_length() > 0 or _first_word(tag).byte_length() > 0:
+            break
+        s = String(String(s[byte = close + 1 :]).strip())
     if s.startswith("merge pull request") or s.startswith("merge branch") or s.startswith("merge remote"):
         return "merge"
     var b = s.as_bytes()
@@ -238,14 +268,17 @@ def commit_type(subject: String, version_change: Bool) -> String:
             base = _conventional(String(s[byte=:i]))
             rest_at = j + 1
     var ws = words(String(s[byte=rest_at:]))
-    var migration = _says_migration(ws)
+    # A prefix it doesn't know still counts for a version or a migration:
+    # `migrate: .load -> .unsafe_load`, `toolchain: lock mojo 1.2.0...`.
+    var scan = words(s) if base.byte_length() == 0 and rest_at > 0 else ws.copy()
+    var migration = _says_migration(scan)
     if version_change:
         return "migration" if migration else "version"
     if base.byte_length() > 0 and base != "chore" and base != "fix" and base != "refactor":
         return base
     if base.byte_length() > 0 and migration:
         return "migration"
-    if _says_version(ws):
+    if _says_version(scan):
         return "version"
     if migration:
         return "migration"
@@ -256,6 +289,11 @@ def commit_type(subject: String, version_change: Bool) -> String:
     if (ws[0] == "update" or ws[0] == "updated" or ws[0] == "updates") and len(ws) > 1:
         if ws[1] == "readme" or ws[1] == "readme.md" or ws[1] == "docs" or ws[1] == "documentation":
             return "docs"
+    # `Initial commit`, `initial setup`; not `init function of ...`.
+    if (ws[0] == "initial" or ws[0] == "init") and (
+        len(ws) == 1 or ws[1] == "commit" or ws[1] == "setup" or ws[1] == "import"
+    ):
+        return "chore"
     var t = _first_word(ws[0])
     return t if t.byte_length() > 0 else String("other")
 
