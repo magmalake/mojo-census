@@ -1,1 +1,0 @@
-- **A Mojo pin that adapts code is a migration**: a subject that moves to a Mojo version and also says it refreshed, fixed, ported, adapted or reworked something (`lock mojo 1.2.0..., refresh MOJO_NOTES`) is typed migration, not version.

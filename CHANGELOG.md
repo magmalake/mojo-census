@@ -3,6 +3,12 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.4.1 - 2026-11-12
+
+- **A Mojo pin that adapts code is a migration**: a subject that moves to a Mojo version and also says it refreshed, fixed, ported, adapted or reworked something (`lock mojo 1.2.0..., refresh MOJO_NOTES`) is typed migration, not version. (#157)
+
+- **mojo_live survives a 502 from GitHub**: a heads query GitHub fails is tried again, then split in halves, and a small batch that still fails is skipped for that poll instead of failing it; batches are 50 repos, not 100. (#158, #159)
+
 ## 1.4.0 - 2026-11-12
 
 - **Ready for Mojo 1.3**: `Pointer` in place of the deprecated `UnsafePointer`, and `__deinit__` in place of `__del__`. (#149)
