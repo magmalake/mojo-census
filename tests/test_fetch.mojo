@@ -1,6 +1,6 @@
 """Timeouts and retries (#49): `fetch.Download` against a local server that
 stalls, fails and cuts connections (tests/http_faults.py, which needs
-`python3`), and the timeout of `history._sh` and git's stall detector for
+`python3`), and the timeout of `command.command` and git's stall detector for
 clones.
 
     pixi run test
@@ -13,7 +13,14 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 from std.time import perf_counter_ns, sleep
 
 from fetch import Download, HttpSettings
-from history import TIMED_OUT, _sh, git_net, transient_git_error
+from command import STDERR_MERGE, TIMED_OUT, command, git
+from history import git_net, transient_git_error
+
+
+def _sh(cmd: String, timeout_ms: Int = 0) raises -> Tuple[Int, String]:
+    """`cmd` run with `sh` (the tests set repositories up with it; the census
+    itself runs git without a shell)."""
+    return command(["/bin/sh", "-c", cmd], timeout_ms)
 from retry import backoff_ms, retryable_status
 
 
@@ -230,17 +237,13 @@ def test_git_stall_is_detected() raises:
     # with `GIT_TIMEOUT_SECONDS` as the backstop.
     var dir = String(getenv("TMPDIR", "/tmp"), "/census-test-fetch/stall.git")
     var t0 = perf_counter_ns()
-    var r = _sh(
-        String(
-            git_net().replace("http.lowSpeedTime=60", "http.lowSpeedTime=2"),
-            " clone --quiet --bare ",
-            _url("/stallhead/x.git"),
-            " '",
-            dir,
-            "' 2>&1",
-        ),
-        20_000,
-    )
+    var args = git_net()
+    for i in range(len(args)):
+        if args[i] == "http.lowSpeedTime=60":
+            args[i] = "http.lowSpeedTime=2"
+    for a in ["clone", "--quiet", "--bare", _url("/stallhead/x.git"), dir]:
+        args.append(a)
+    var r = git(args, 20_000, STDERR_MERGE)
     assert_true(r[0] != 0 and r[0] != TIMED_OUT, String(r[0], " ", r[1]))
     assert_true(_secs(t0) < 10.0, String(_secs(t0)))
     assert_true(transient_git_error(r[1]), r[1])

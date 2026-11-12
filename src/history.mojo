@@ -11,11 +11,10 @@ has. It needs `git` on the PATH.
 """
 
 from std.os import getenv
-from std.subprocess import run
 
 from dista import Seq
 
-from orca.proc import capture
+from command import STDERR_DROP, STDERR_MERGE, TIMED_OUT, git, make_dirs, remove_tree
 from retry import backoff_ms, env_int, log_retry, nap_ms
 from deps import names_mojo_pkg
 from versions import (
@@ -185,9 +184,7 @@ def join_tags(
 def _read_tags(repo: String, dir: String, mut out: History) raises:
     """Appends the clone's tags to `out.tags`, each with the tooling and
     Mojo version of the commit it points at when `out.commits` has it."""
-    var r = _sh(String(
-        "git -C '", dir, "' for-each-ref --format='", TAG_FORMAT, "' refs/tags",
-    ))
+    var r = git(["-C", dir, "for-each-ref", String("--format=", TAG_FORMAT), "refs/tags"])
     if r[0] != 0:
         raise Error("git for-each-ref failed: ", r[1].strip())
     var tags = parse_tags(repo, r[1])
@@ -200,9 +197,8 @@ def _read_tags(repo: String, dir: String, mut out: History) raises:
 
 
 def safe_repo(repo: String) -> Bool:
-    """`owner/name` with GitHub's characters only, safe to put in a shell
-    command (repository names reach `sh -c` in `_sh`, so nothing else may
-    pass)."""
+    """`owner/name` with GitHub's characters only: it names a directory
+    under the work directory and a GitHub URL, so nothing else may pass."""
     var slashes = 0
     for c in repo.as_bytes():
         if c == UInt8(ord("/")):
@@ -255,59 +251,22 @@ def is_mojo_file(path: StringSlice) -> Bool:
     return path.endswith(".mojo") or path.endswith(".🔥")
 
 
-def _sh(cmd: String, timeout_ms: Int = 0) raises -> Tuple[Int, String]:
-    """Runs `cmd` with `sh`, and returns its exit status and its output, any
-    bytes that aren't UTF-8 dropped: an old commit's author or path can be
-    Latin-1, and `run` refuses output that isn't UTF-8. With `timeout_ms`
-    the command is killed once it has run that long, and the status is
-    `TIMED_OUT`."""
-    var wrapped = String(
-        "{ ", cmd, '; echo "@@exit $?"; } | iconv -c -f UTF-8 -t UTF-8; true'
-    )
-    var out: String
-    if timeout_ms > 0:
-        # orca's `capture` runs it as the leader of a process group of its
-        # own and, past the timeout, kills the group: git and the
-        # `git-remote-https` and `index-pack` it started.
-        try:
-            out = capture(
-                ["/bin/sh", "-c", wrapped], Float64(timeout_ms) / 1000.0
-            )[1]
-        except e:
-            var msg = String(e)
-            if "took longer than" in msg:
-                msg = String("timed out after ", timeout_ms // 1000, " s")
-            return (TIMED_OUT, msg^)
-    else:
-        out = run(wrapped)
-    var at = out.rfind("@@exit ")
-    if at < 0:
-        return (-1, out^)
-    var status = Int(String(out[byte = at + 7 :]).strip())
-    return (status, String(out[byte=:at]))
-
-
-comptime TIMED_OUT = 124
-"""`_sh`'s status for a command killed at its timeout (as `timeout(1)`)."""
-
-
 def git_timeout_ms() -> Int:
     """`GIT_TIMEOUT_SECONDS` (default 600): how long one git command that
     talks to GitHub may run before it is killed."""
     return env_int("GIT_TIMEOUT_SECONDS", 600) * 1000
 
 
-def git_net() -> String:
-    """`git` for a command that talks to GitHub: no credential prompt, and
-    git's own stall detector, which aborts a transfer slower than
+def git_net() -> List[String]:
+    """git's options for a command that talks to GitHub: git's own stall
+    detector, which aborts a transfer slower than
     `GIT_LOW_SPEED_LIMIT` bytes a second (1000) for `GIT_LOW_SPEED_SECONDS`
     (60), long before `GIT_TIMEOUT_SECONDS`. The `-c` settings reach the
     fetches a blobless clone makes later, from `git show`, too."""
-    return String(
-        "GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=",
-        env_int("GIT_LOW_SPEED_LIMIT", 1000),
-        " -c http.lowSpeedTime=", env_int("GIT_LOW_SPEED_SECONDS", 60),
-    )
+    return [
+        "-c", String("http.lowSpeedLimit=", env_int("GIT_LOW_SPEED_LIMIT", 1000)),
+        "-c", String("http.lowSpeedTime=", env_int("GIT_LOW_SPEED_SECONDS", 60)),
+    ]
 
 
 def transient_git_error(output: String) -> Bool:
@@ -329,7 +288,7 @@ def transient_git_error(output: String) -> Bool:
     return True
 
 
-def git_clone(repo: String, dir: String, flags: String) raises -> Tuple[Int, String]:
+def git_clone(repo: String, dir: String, flags: List[String]) raises -> Tuple[Int, String]:
     """`git clone --quiet --bare <flags>` of `repo` from GitHub into `dir`,
     each try killed after `git_timeout_ms()` and tried again, with
     exponential backoff and jitter, up to `GIT_RETRIES` (default 3) more
@@ -339,14 +298,17 @@ def git_clone(repo: String, dir: String, flags: String) raises -> Tuple[Int, Str
     var timeout = git_timeout_ms()
     var attempt = 1
     while True:
-        _ = _sh(String("mkdir -p '", _workdir(), "' && rm -rf '", dir, "'"))
-        var r = _sh(
-            String(
-                git_net(), " clone --quiet --bare", flags,
-                " https://github.com/", repo, ".git '", dir, "' 2>&1",
-            ),
-            timeout,
-        )
+        make_dirs(_workdir())
+        remove_tree(dir)
+        var args = git_net()
+        args.append("clone")
+        args.append("--quiet")
+        args.append("--bare")
+        for f in flags:
+            args.append(f)
+        args.append(String("https://github.com/", repo, ".git"))
+        args.append(dir)
+        var r = git(args, timeout, STDERR_MERGE)
         if r[0] == 0:
             return r^
         var err = String(r[1].strip())
@@ -362,7 +324,7 @@ def git_clone(repo: String, dir: String, flags: String) raises -> Tuple[Int, Str
 
 def _show(dir: String, sha: String, file: String) raises -> String:
     """The contents of `file` at `sha`, or "" if it isn't there."""
-    var r = _sh(String("git -C '", dir, "' show '", sha, ":", file, "' 2>/dev/null"))
+    var r = git(["-C", dir, "show", String(sha, ":", file)], stderr=STDERR_DROP)
     if r[0] != 0:
         return String()
     return r[1]
@@ -651,7 +613,7 @@ def read_history(repo: String) raises -> History:
     except e:
         if safe_repo(repo):
             try:
-                _ = _sh(String("rm -rf '", _clone_dir(repo), "'"))
+                remove_tree(_clone_dir(repo))
             except:
                 pass
         out = History.empty(repo)
@@ -670,7 +632,7 @@ def read_tags(repo: String) raises -> History:
         return out^
     var dir = _clone_dir(repo)
     try:
-        var clone = git_clone(repo, dir, " --filter=blob:none")
+        var clone = git_clone(repo, dir, ["--filter=blob:none"])
         if clone[0] != 0:
             out.error = String("git clone failed: ", clone[1].strip())
         else:
@@ -679,7 +641,7 @@ def read_tags(repo: String) raises -> History:
         out = History.empty(repo)
         out.error = String("reading its tags: ", e)
     try:
-        _ = _sh(String("rm -rf '", dir, "'"))
+        remove_tree(dir)
     except:
         pass
     return out^
@@ -703,22 +665,20 @@ def _read_history(repo: String, mut out: History) raises:
         out.error = String("not a repository name: ", repo)
         return
     var dir = _clone_dir(repo)
-    var clone = git_clone(repo, dir, "")
+    var clone = git_clone(repo, dir, List[String]())
     if clone[0] != 0:
         out.error = String("git clone failed: ", clone[1].strip())
-        _ = _sh(String("rm -rf '", dir, "'"))
+        remove_tree(dir)
         return
     # `--first-parent --diff-merges=first-parent` follows the default branch
     # only, with a merge shown as its diff against the first parent: a pull
     # request counts once, and the lines add up to the branch's real size.
     # `--reverse` puts the oldest commit first so the totals accumulate.
-    var log = _sh(
-        String(
-            "git -C '", dir, "' -c core.quotepath=off log --first-parent",
-            " --reverse --no-renames --diff-merges=first-parent",
-            " --format='", LOG_FORMAT, "' --numstat --summary HEAD",
-        )
-    )
+    var log = git([
+        "-C", dir, "-c", "core.quotepath=off", "log", "--first-parent",
+        "--reverse", "--no-renames", "--diff-merges=first-parent",
+        String("--format=", LOG_FORMAT), "--numstat", "--summary", "HEAD",
+    ])
     if log[0] != 0:
         out.error = String("git log failed: ", log[1].strip())
     else:
@@ -730,4 +690,4 @@ def _read_history(repo: String, mut out: History) raises:
                 pass  # the history stands without its tags
         except e:
             out.error = String("reading its git log: ", e)
-    _ = _sh(String("rm -rf '", dir, "'"))
+    remove_tree(dir)

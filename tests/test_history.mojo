@@ -7,7 +7,14 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 from std.os import getenv
 
-from history import LOG_FORMAT, SUBJECT_MAX, History, _parse_log, _read_tags, _sh, is_bazel_file, is_mojo_file, safe_repo
+from command import command, utf8_only
+from history import LOG_FORMAT, SUBJECT_MAX, History, _parse_log, _read_tags, is_bazel_file, is_mojo_file, safe_repo
+
+
+def _sh(cmd: String, timeout_ms: Int = 0) raises -> Tuple[Int, String]:
+    """`cmd` run with `sh` (the tests set repositories up with it; the census
+    itself runs git without a shell)."""
+    return command(["/bin/sh", "-c", cmd], timeout_ms)
 from history import CommitRow, MigrationRow, TagRow, join_tags, parse_tags
 
 
@@ -93,6 +100,24 @@ def test_output_not_utf8() raises:
     var r = _sh("printf 'caf\\351 ok\\n'; (exit 3)")
     assert_equal(r[0], 3)
     assert_equal(r[1], "caf ok\n")
+
+
+def test_utf8_only() raises:
+    # Lone continuation bytes, a cut sequence, an overlong one and a
+    # surrogate go; whole sequences of every length stay.
+    var b: List[UInt8] = [
+        0x61, 0x80, 0x62, 0xE9, 0x63, 0xC3, 0xA9, 0xE2, 0x82, 0xAC,
+        0xF0, 0x9F, 0x94, 0xA5, 0xC0, 0xAF, 0xED, 0xA0, 0x80, 0x64, 0xE2, 0x82,
+    ]
+    assert_equal(utf8_only(Span(b)), "abcé€🔥d")
+
+
+def test_command_without_a_shell() raises:
+    # Arguments reach the program as they are: no quoting, no globbing.
+    var r = command(["printf", "%s|", "a b", "*", "it's"])
+    assert_equal(r[0], 0)
+    assert_equal(r[1], "a b|*|it's|")
+    assert_equal(command(["census-no-such-program"])[0], 127)
 
 
 def test_safe_repo() raises:
