@@ -47,6 +47,32 @@ def test_first_word() raises:
     _is("Création du module", "other")
 
 
+def test_rules_v2() raises:
+    # Shapes the first rules left as `other` in a sample of census repos.
+    _is("toolchain: lock mojo 1.2.0.dev2026092605, refresh MOJO_NOTES for 1.2.0", "version")
+    _is("toolchain: pin pixi 0.78", "chore")
+    _is("migrate: .load -> .unsafe_load for the pinned compiler", "migration")
+    _is("accel: SIMD/parallel/GPU pass, parity tests green", "perf")
+    _is("repair: build and tests green with the pending edits", "fix")
+    _is("24.2 updates", "version")
+    _is("update to v25.1", "version")
+    _is("Bump actions/checkout from 4.1.5 to 4.1.6 (#10)", "chore")
+    _is("[skip ci] Merge pull request #43 from someone/issue-7", "merge")
+    _is("[pre-commit.ci] pre-commit autoupdate (#4)", "chore")
+    _is("Initial commit", "chore")
+    _is("bugfixes in module struct, regression example almost works now", "fix")
+    _is("Enhance vector addition implementation with GPU context management", "feature")
+    # Still not Mojo's version: a library's own numbers.
+    _is("update numpy to 2.1", "other")
+    _is("phase verify: agent pass, gate green", "other")
+    _is("init function of neuron class defined", "other")
+    _is("[release] Merge `pre-0.5` branch to `main` branch for release (#19)", "chore")
+    _is("[doc] Reorganize & Update docs (#343)", "docs")
+    _is("[gpt2] Add attention backward & forward", "feature")
+    _is("ffi: add delete / optimize / create_index", "feature")
+    _is("README: say how to actually install this", "docs")
+
+
 def test_words() raises:
     var w = words("bump mojo to 1.2.0.dev2026. done-")
     assert_equal(len(w), 5)
