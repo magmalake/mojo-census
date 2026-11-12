@@ -19,6 +19,7 @@ from fetch import github
 from jscan import Range, each, field, micros_to_iso, text, timestamp_micros
 from lake import issues_schema, json_strings, str_or_null, try_load, ts, ts_or_null
 from orca.civil import now
+from overview import BASE_MONTH, DAY_US, Overview, month_of_days
 from stats import limited, state_of, wait_seconds
 
 
@@ -309,14 +310,66 @@ def summarize(rows: List[IssueRow]) -> Dict[String, RepoIssues]:
     return out^
 
 
-def read_issues() raises -> Dict[String, RepoIssues]:
-    """`summarize` of mojo.issues' current snapshot; empty when the table
-    doesn't exist yet."""
+def read_issue_rows() raises -> List[IssueRow]:
+    """mojo.issues' current snapshot; empty when the table doesn't exist
+    yet."""
+    var rows = List[IssueRow]()
     var t = try_load("mojo", "issues")
     if not t or not t.value().metadata.has_current_snapshot:
-        return Dict[String, RepoIssues]()
-    var rows = List[IssueRow]()
+        return rows^
     for b in t.value().scan().to_batches():
         for ref r in issue_rows(b):
             rows.append(r.copy())
-    return summarize(rows)
+    return rows^
+
+
+def read_issues() raises -> Dict[String, RepoIssues]:
+    """`summarize` of mojo.issues' current snapshot."""
+    return summarize(read_issue_rows())
+
+
+def add_issue_months(mut ov: Overview, rows: List[IssueRow]):
+    """Fills `ov`'s issue curves, one value per month of `ov.months`: issues
+    opened and closed, and pull requests opened and merged, in that month.
+    An event before the first month counts in it; one after the last isn't
+    counted."""
+    var n = len(ov.months)
+    ov.issues_opened = List[Int64](length=n, fill=0)
+    ov.issues_closed = List[Int64](length=n, fill=0)
+    ov.prs_opened = List[Int64](length=n, fill=0)
+    ov.prs_merged = List[Int64](length=n, fill=0)
+    if n == 0:
+        return
+    var first = _month_index(ov.months[0])
+    for ref r in rows:
+        var opened = _slot(r.created_at, first, n)
+        if r.kind == "pr":
+            if opened >= 0:
+                ov.prs_opened[opened] += 1
+            var merged = _slot(r.merged_at, first, n)
+            if merged >= 0:
+                ov.prs_merged[merged] += 1
+        else:
+            if opened >= 0:
+                ov.issues_opened[opened] += 1
+            var closed = _slot(r.closed_at, first, n)
+            if closed >= 0:
+                ov.issues_closed[closed] += 1
+
+
+def _month_index(label: String) -> Int:
+    """Months since 1970-01 of a `month_label` (`2025-07`)."""
+    try:
+        var parts = label.split("-")
+        return (Int(parts[0]) - 1970) * 12 + Int(parts[1]) - 1
+    except:
+        return BASE_MONTH
+
+
+def _slot(at: Int64, first: Int, n: Int) -> Int:
+    """The index in the curves of the month of `at` (microseconds since the
+    epoch), counting from month `first`; -1 for none (0) or after the last."""
+    if at <= 0:
+        return -1
+    var k = max(month_of_days(Int(at // DAY_US)) - first, 0)
+    return k if k < n else -1

@@ -38,7 +38,7 @@ from overview import (
 )
 
 from console_migrations import _migrations_body
-from issues import RepoIssues, read_issues
+from issues import RepoIssues, add_issue_months, read_issue_rows, summarize
 from similar import Embeddings, Neighbor, nearest, read_embeddings
 from categories import categorize
 
@@ -282,7 +282,9 @@ struct Cache(Movable):
             if e.key not in details:
                 details[e.key] = RepoData()
             details[e.key].acts = e.value.copy()
-        for e in read_issues().items():
+        var issue_rows = read_issue_rows()
+        add_issue_months(ov, issue_rows)
+        for e in summarize(issue_rows).items():
             if e.key not in details:
                 details[e.key] = RepoData()
             details[e.key].issues = e.value.copy()
