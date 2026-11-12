@@ -1,0 +1,1 @@
+- **mojo_live survives a 502 from GitHub**: a heads query GitHub fails is tried again, then split in halves, and a small batch that still fails is skipped for that poll instead of failing it; batches are 50 repos, not 100.

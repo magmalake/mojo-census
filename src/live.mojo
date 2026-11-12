@@ -3,15 +3,22 @@ moved since the last look, and the commits that moved them.
 
 One GraphQL query asks for the heads of `HEADS_BATCH` repositories at once
 (`heads_query`; 1 rate-limit point, a few seconds), so a look at every census
-repo is about 13 queries. A repo whose head moved is asked for its latest
+repo is about 26 queries. A repo whose head moved is asked for its latest
 `HISTORY_N` commits with their subjects (`history_query`), and the commits
 newer than the head seen before are the new ones (`new_since`). A repo seen
 for the first time only records its head: its history is mojo_history's.
 """
 
 from jscan import Range, each, field, text, timestamp_micros
+from retry import backoff_ms, nap_ms, retryable_status
 
-comptime HEADS_BATCH = 100
+comptime HEADS_BATCH = 50
+"""Repos a heads query asks for. 100 timed out on GitHub's side (502) on prod
+(#158); a batch that fails is split further (mojo_live's `ask_heads`)."""
+comptime HEADS_MIN_SPLIT = 10
+"""A failing batch this small isn't split again: it is skipped this poll."""
+comptime HEADS_TRIES = 2
+"""Attempts at one batch before it is split."""
 comptime HISTORY_N = 30
 """Commits asked for per moved repo; a push of more is cut to these."""
 
@@ -176,3 +183,84 @@ def freshness(commits: List[LiveCommit], since: Int64) -> Freshness:
     sort(lags)
     var n = len(lags)
     return Freshness(n, lags[(n - 1) // 2], lags[min(n - 1, (n * 9) // 10)])
+
+
+struct Asked(Movable):
+    """What the heads queries of one poll got."""
+    var heads: Dict[String, String]
+    var cost: Int
+    var remaining: Int
+    var skipped: Int
+    """Repos whose batch failed even when split: left as they were."""
+    var failed_in_a_row: Int
+    var last_error: String
+
+    def __init__(out self):
+        self.heads = Dict[String, String]()
+        self.cost = 0
+        self.remaining = -1
+        self.skipped = 0
+        self.failed_in_a_row = 0
+        self.last_error = String()
+
+
+comptime GIVE_UP_AFTER = 12
+"""Failed heads requests in a row after which a poll stops: GitHub is down,
+not one batch too big. Splitting a batch of 50 down to one that small fails
+at most 8 times in a row (two tries at 50, 25, 12 and 6)."""
+
+
+def ask_heads[
+    fetch: def(String) raises thin -> Tuple[Int, String]
+](repos: List[String], mut got: Asked, pause: Bool = True) raises:
+    """The heads of `repos` into `got`. A 5xx, a timeout or a request that
+    fails is tried again after a pause; if it still fails, the batch is
+    split in halves (GitHub answers a big query with 502 when it takes too
+    long), down to `HEADS_MIN_SPLIT` repos, and a batch that small that
+    still fails is skipped. Any other status (401, 403) raises. `fetch`
+    POSTs a query and returns its status and body."""
+    for attempt in range(HEADS_TRIES):
+        if attempt > 0 and pause:
+            nap_ms(backoff_ms(attempt - 1))
+        var status = 0
+        var body: String
+        try:
+            var r = fetch(heads_query(repos))
+            status = r[0]
+            body = r[1]
+        except e:
+            body = String()
+            got.last_error = String(e)
+        if status == 200:
+            var h = parse_heads(body, repos)
+            for e in h.heads.items():
+                got.heads[e.key] = e.value
+            got.cost += max(h.cost, 0)
+            got.remaining = h.remaining
+            got.failed_in_a_row = 0
+            return
+        if status != 0:
+            got.last_error = String(
+                "HTTP ", status, ": ", String(body[byte = : min(200, body.byte_length())])
+            )
+            if not retryable_status(status):
+                raise Error("GraphQL heads: ", got.last_error)
+        got.failed_in_a_row += 1
+        if got.failed_in_a_row >= GIVE_UP_AFTER:
+            raise Error(
+                "GraphQL heads: ", got.failed_in_a_row, " requests in a row failed, the last: ",
+                got.last_error,
+            )
+    if len(repos) > HEADS_MIN_SPLIT:
+        var mid = len(repos) // 2
+        var a = List[String]()
+        var b = List[String]()
+        for i in range(len(repos)):
+            if i < mid:
+                a.append(repos[i])
+            else:
+                b.append(repos[i])
+        ask_heads[fetch](a, got, pause)
+        ask_heads[fetch](b, got, pause)
+        return
+    got.skipped += len(repos)
