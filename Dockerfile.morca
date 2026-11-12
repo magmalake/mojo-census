@@ -16,7 +16,10 @@
 # in the image once. Any change rebuilds all of one.
 #
 # MORCA_SOURCE and MORCA_COMMIT say what the pipelines were built from, which
-# each run records and morca ui links.
+# each run records and morca ui links. They are the final stage's environment,
+# which `describe` reads (morca-mojo 0.25.1), not `-D` defines: a define with
+# the commit in it made every commit a new compile, which the compile cache
+# could never serve (#153).
 #
 # Everything is built with line tables (-g1) and the image has
 # llvm-symbolizer, so a crash's stack dump in a run's driver.log names each
@@ -58,17 +61,12 @@ RUN pixi install --locked
 # MOJO_BUILD_JOBS: 1 builds the two multi-call binaries one after the other;
 # otherwise scripts/build.sh builds them at once (see there).
 FROM env AS build
-ARG MORCA_SOURCE=""
-ARG MORCA_COMMIT=""
 ARG MOJO_TARGET_CPU=neoverse-n1
 ARG MOJO_BUILD_JOBS=""
 ENV MODULAR_CACHE_DIR=/mojo-cache
 COPY . .
-# MORCA_SOURCE and MORCA_COMMIT reach every program now, which only a
-# pipeline's describe reads.
 RUN --mount=type=cache,id=mojo-cache,target=/mojo-cache mkdir -p /out/bin /out/pipelines \
-    && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines -g1 -strip-file-prefix=/src/project/ --target-cpu "$MOJO_TARGET_CPU" \
-            -D MORCA_SOURCE='"${MORCA_SOURCE}"' -D MORCA_COMMIT='"${MORCA_COMMIT}"' || exit 1; \
+    && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines -g1 -strip-file-prefix=/src/project/ --target-cpu "$MOJO_TARGET_CPU" || exit 1; \
         echo "mojo build: peak memory $(awk "{print int(\$1 / 1048576)}" /sys/fs/cgroup/memory.peak 2> /dev/null) MB"; \
         if ls /out/pipelines/* > /dev/null 2>&1; then /out/bin/morca locate /out/pipelines/* --root .; fi'
 # The line tables compressed, which llvm-symbolizer reads as they are: the
