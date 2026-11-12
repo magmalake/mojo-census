@@ -1,1 +1,0 @@
-- **mojo_retool registered**: the upgrade step that re-reads every history works; 1.3.0's failed with "pipeline mojo_retool isn't registered". (#143)
