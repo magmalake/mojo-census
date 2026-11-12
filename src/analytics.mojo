@@ -1,5 +1,5 @@
 """PostHog product analytics for the console's pages, the way the
-magmalake.org website and orca's UI load it.
+magmalake.org website and morca's UI load it.
 
 `posthog_snippet(key, site)` is the `<head>` markup: PostHog's `array.js` and
 its API through `/ph` on the page's own origin, a first-party proxy (the

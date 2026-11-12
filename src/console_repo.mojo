@@ -13,7 +13,7 @@ from versions import source_label, usable
 
 from console_cache import Cache
 from issues import IssueRow, RepoIssues
-from console_how import ORCA_UI
+from console_how import MORCA_UI
 from console_layout import _age, _chips, _empty, _n, _now_days, _or_dash, _page, _this_month
 from console_migrations import _line_chart
 
@@ -179,7 +179,7 @@ def _issues_section(x: RepoIssues, gh: String, embedded: Bool) -> String:
         "<h2>Issues and pull requests</h2><p class=mute>",
         _n(Int64(x.open_issues)), " open and ", _n(Int64(x.closed_issues)), " closed issues; ",
         _n(Int64(x.open_prs)), " open, ", _n(Int64(x.merged_prs)), " merged and ",
-        _n(Int64(x.closed_prs)), " closed pull requests, from GitHub by <a href='", ORCA_UI,
+        _n(Int64(x.closed_prs)), " closed pull requests, from GitHub by <a href='", MORCA_UI,
         "/pipelines/mojo_issues' rel=noopener>mojo_issues</a>.</p>",
     )
     if len(x.issues) > 0:
@@ -221,7 +221,7 @@ def _similar_section(repo: String, c: Cache) -> String:
         "</tbody></table></div><p class=mute>By the cosine of the embeddings of each repo's name, ",
         "description and topics: <code>", html_escape(c.embed_model), "</code> at <code>",
         html_escape(_short_rev(c.embed_rev)), "</code>, from snapshot ", c.embed_snapshot,
-        " of mojo.repo_embeddings, which <a href='", ORCA_UI,
+        " of mojo.repo_embeddings, which <a href='", MORCA_UI,
         "/pipelines/mojo_embed' rel=noopener>mojo_embed</a> writes.</p>",
     )
     return h^

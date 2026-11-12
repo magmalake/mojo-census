@@ -4,7 +4,7 @@ Uses flare's blocking `HttpClient`, with a read timeout as well as the
 connect timeout: without one a stalled connection blocks a read forever
 (#49). `Download`, GH Archive's, also retries and resumes (`HttpSettings`,
 `retry`). GitHub calls send `GITHUB_TOKEN` when it
-is set (orca gives runs the secret registered with `--secret`); without it
+is set (morca gives runs the secret registered with `--secret`); without it
 the REST API allows 60 requests an hour, which is enough for a local run.
 """
 

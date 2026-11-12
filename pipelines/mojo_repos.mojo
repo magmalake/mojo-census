@@ -23,9 +23,9 @@ from std.os import getenv, setenv
 from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of, batch_of_columns
 from iceberg.nested import ColumnTree
 from iceberg.values import Datum
-from orca import Ctx, Daily, Day, Mapped, Pipeline, Step, orca_main
-from orca.civil import now
-from orca.tables import append, ensure_table, scan, table
+from morca import Ctx, Daily, Day, Mapped, Pipeline, Step, morca_main
+from morca.civil import now
+from morca.tables import append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from cols import col, i64_at, str_at, str_range
@@ -116,7 +116,7 @@ def _day_candidates(mut ctx: Ctx, d: Day) raises -> Dict[String, Candidate]:
     the order they were noticed, the earliest `first_seen`, the first
     `sha`."""
     # The table is partitioned by day on `hour`, so the range filter lets the
-    # scan skip every other day's files. `scan` is orca's: pinned to the
+    # scan skip every other day's files. `scan` is morca's: pinned to the
     # snapshot this step first saw, so a retry sees the same candidates.
     var lo = Int64(days_from_civil(d.year, d.month, d.day)) * 86_400_000_000
     var hi = lo + 86_400_000_000
@@ -319,7 +319,7 @@ def find_repos(mut ctx: Ctx, d: Day) raises -> Int:
 
 
 # `Mapped` runs the step once per partition of a run, here a `Day`. Reads and
-# writes are declared so `orca.tables` can enforce them and the UI can draw
+# writes are declared so `morca.tables` can enforce them and the UI can draw
 # the lineage: CANDIDATES is only read (the sensor's dataset), and the two
 # tables are written. `retries=1` re-runs a failed attempt once in the run.
 comptime FindRepos = Step[
@@ -345,6 +345,6 @@ comptime MojoRepos = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[MojoRepos]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[MojoRepos]()

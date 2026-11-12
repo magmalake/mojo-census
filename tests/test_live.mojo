@@ -5,7 +5,7 @@ from std.time import perf_counter_ns
 from iceberg.batch import ColumnBuilder, batch_of
 from iceberg.catalog.filesystem import FilesystemCatalog
 from iceberg.values import Datum
-from orca.civil import now
+from morca.civil import now
 
 from console_live import live_json, live_page, read_live
 from lake import live_commits_schema, ts
@@ -101,7 +101,7 @@ def test_live_page_reads_the_table() raises:
         c[3].add(ts(r[3]))
         c[4].add(ts(r[4]))
     _ = t.append([batch_of(c)])
-    _ = setenv("ORCA_WAREHOUSE", dir)
+    _ = setenv("MORCA_WAREHOUSE", dir)
     var d = read_live(t_now)
     assert_true(d.snapshot >= 0)
     assert_equal(len(d.commits), 2)

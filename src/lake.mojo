@@ -356,7 +356,7 @@ def _week_of_snapshots() -> Dict[String, String]:
 
 
 def events_properties() -> Dict[String, String]:
-    """gharchive.events' table properties beyond orca's defaults: a week of
+    """gharchive.events' table properties beyond morca's defaults: a week of
     snapshots, and zstd 9 rather than the default level: about 13% smaller,
     for 0.35 s more write time in an hour task of 2.4 s
     (magmalake/mojo-census#28). Needs iceberg-mojo's
@@ -532,8 +532,8 @@ def str_or_null(s: String) -> Datum:
 
 
 def warehouse() -> String:
-    """The lake: ORCA_WAREHOUSE (on AWS, the public bucket), else a directory."""
-    return getenv("ORCA_WAREHOUSE", "build/warehouse")
+    """The lake: MORCA_WAREHOUSE (on AWS, the public bucket), else a directory."""
+    return getenv("MORCA_WAREHOUSE", "build/warehouse")
 
 
 def load(namespace: String, name: String) raises -> Table:

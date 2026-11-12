@@ -52,8 +52,8 @@ bigger and its files 0.5% smaller; 16 MB makes them 1-1.5% bigger than one
 row group a file."""
 
 comptime HOUR_MEMORY_MB = 450
-"""Memory per hour of GH Archive in flight, in MB, for orca's resource grants
-(magmalake/orca.mojo#171: `GHARCHIVE_PARALLEL = "auto"`): a run needs about
+"""Memory per hour of GH Archive in flight, in MB, for morca's resource grants
+(morca-dev/morca#171: `GHARCHIVE_PARALLEL = "auto"`): a run needs about
 300 MB for itself plus this per hour (`GHARCHIVE_PARALLEL`).
 
 Measured on the busiest hours there are (2023-2025: 880 MB-1 GB of JSON,
@@ -345,7 +345,7 @@ def order_by_repo_type(rows: EventRows) -> List[Int32]:
 
 struct FileTarget(Movable):
     """Where `write_event_files` writes: a table's data directory, schema,
-    spec and write properties (the fields of an `orca.tables.FileWriter`)."""
+    spec and write properties (the fields of an `morca.tables.FileWriter`)."""
 
     var io: FileIO
     var location: String

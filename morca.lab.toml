@@ -1,0 +1,16 @@
+# The lab stack's morca.toml (census #97 and #98, morca docs/hetzner.md,
+# "A dev stack"): a server for testing morca itself, with none of the census's
+# pipelines, only those whose inputs are made up to exercise it. The image
+# has it at /opt/morca/morca.lab.toml; the lab stack's EXTRA_ENV_FILE sets
+# MORCA_CONFIG=/opt/morca/morca.lab.toml, so `morca register` (no arguments)
+# there reads this file.
+
+[defaults]
+max_runs = 1
+
+[pipelines.ballast]
+# Learned (morca #269), the subject of the test: pipelines/ballast.mojo has
+# each day's peaks. Run by hand, e.g.
+#   docker exec scheduler morca backfill ballast 2011-01-01..2011-01-22
+memory_gb = "auto"
+cpus = "auto"

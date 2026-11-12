@@ -1,4 +1,4 @@
-"""Removes the rows one orca run appended to one partition of a table: one
+"""Removes the rows one morca run appended to one partition of a table: one
 `delete` snapshot that drops exactly the data files that run's snapshots
 added for it. For repairing a day a rerun appended twice (before gharchive
 replaced a day's rows on a rerun).
@@ -6,7 +6,7 @@ replaced a day's rows on a rerun).
     pixi run mojo run -I src tools/drop_run.mojo gharchive.events 133 2026-10-13
     pixi run mojo run -I src tools/drop_run.mojo gharchive.events 133 2026-10-13 --commit
 
-With `ORCA_WAREHOUSE` (and AWS credentials for `s3://`). Without
+With `MORCA_WAREHOUSE` (and AWS credentials for `s3://`). Without
 `--commit` it only reports. The snapshot's summary carries
 `orca.partitions`, so sensors downstream rerun that partition.
 """

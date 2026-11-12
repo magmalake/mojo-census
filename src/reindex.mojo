@@ -9,7 +9,7 @@ from parquet import RecordBatch
 from cols import col, i64_at, str_at, str_range
 from days import days_of
 from hourindex import HourIndex, IndexFiles, write_index
-from orca.tables import load_dataset
+from morca.tables import load_dataset
 
 from lake import CANDIDATES, GH_RELEASES, REPO_HOUR, EVENTS
 

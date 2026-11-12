@@ -18,7 +18,7 @@ died with the failed attempt, so the retry builds their rows again from
 `gharchive.events` (`reindex.index_hour`, as gharchive_index does), and finds
 the day's index commits, if the attempt got as far as making them.
 
-A new run of a day that has rows already (`orca backfill --rerun`)
+A new run of a day that has rows already (`morca backfill --rerun`)
 replaces them: its first hour's commit to the events, and the day commit to
 each index table, is an `overwrite` that also removes every data file the
 day's partition had, so a day's rows always come from one run.
@@ -63,11 +63,11 @@ from std.os import getenv, setenv
 from std.time import perf_counter_ns
 
 from dista import ObjectRef, Task, Task2
-from orca.civil import now
-from orca import Cron, Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, orca_main
+from morca.civil import now
+from morca import Cron, Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, morca_main
 from iceberg.catalog.filesystem import Table
 from iceberg.manifest import DataFile
-from orca.tables import ensure_table, find_commit, load_dataset
+from morca.tables import ensure_table, find_commit, load_dataset
 
 from datafiles import DataFiles
 from daymerge import merge_job, merge_repo_hour
@@ -130,7 +130,7 @@ def hour_task(day: String, hour: Int) raises -> DataFiles:
 # main one, a download and parse of one hour; `IndexHour` rebuilds an hour's
 # index files from `gharchive.events` when a retry skipped it; `MergeHours`
 # writes a day's `repo_hour` files as one. `Tasks[...]` lists them all, and
-# orca starts one dista runtime for the run before its first step, which the
+# morca starts one dista runtime for the run before its first step, which the
 # step reaches through `ctx.runtime`.
 comptime IndexHour = Task[String, IndexFiles, index_hour]
 comptime Hour = Task2[String, Int, DataFiles, hour_task]
@@ -181,7 +181,7 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
     ref rt = ctx.runtime[GhTasks]()
     # Hours in flight at once. Memory is what limits it: an hour in flight
     # takes about HOUR_MEMORY_MB (HOUR_INDEX_MEMORY_MB without the events),
-    # so the default of 16 is sized for several machines; orca.toml sets 4
+    # so the default of 16 is sized for several machines; morca.toml sets 4
     # for the 8 GB Hetzner server.
     var window = max(1, Int(getenv("GHARCHIVE_PARALLEL", "16")))
     var in_flight = min(window, len(hours))
@@ -412,7 +412,7 @@ def load_day(mut ctx: Ctx, d: Day) raises -> Int64:
 # GHARCHIVE_EVENTS=off: `writes` allows commits, it doesn't require them, and
 # the list is part of the registry hash, which decides which runs of a day
 # count as done; the replace-the-day logic is done by
-# hand in `indexing.commit_hour` rather than by orca's `replaces=`. `retries=2`
+# hand in `indexing.commit_hour` rather than by morca's `replaces=`. `retries=2`
 # re-runs a failed attempt in the same run, which the commit recognition
 # above makes cheap.
 comptime LoadDay = Step[
@@ -440,6 +440,6 @@ comptime GhArchive = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[GhArchive]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[GhArchive]()

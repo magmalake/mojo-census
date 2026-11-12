@@ -20,8 +20,8 @@ out for at most MOJO_ISSUES_MAX_WAIT seconds (3900) in all.
 
 from std.os import getenv, setenv
 
-from orca import Cron, Ctx, Current, Daily, Day, Mapped, Pipeline, Step, orca_main
-from orca.tables import ensure_table, scan, table
+from morca import Cron, Ctx, Current, Daily, Day, Mapped, Pipeline, Step, morca_main
+from morca.tables import ensure_table, scan, table
 
 from cols import str_at
 from issues import IssueRow, issue_rows, issues_batch, issues_of, merge_issues
@@ -122,7 +122,7 @@ comptime Fetch = Step[
     retries=1,
     reads=[REPOS, ISSUES],
     # replaces=: a rerun rewrites the table (replace.replace_files) rather
-    # than adding rows again, so `orca backfill --rerun` needs no
+    # than adding rows again, so `morca backfill --rerun` needs no
     # --allow-append.
     replaces=[ISSUES],
 ]
@@ -139,6 +139,6 @@ comptime MojoIssues = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[MojoIssues]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[MojoIssues]()

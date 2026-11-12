@@ -5,7 +5,7 @@ way (`activity.add_event`) and reads the same repositories through
 any difference.
 
     mojo build -I src tools/compare_activity.mojo -o build/compare_activity
-    ORCA_WAREHOUSE=build/wh ./build/compare_activity 2023-01-10 [every_nth]
+    MORCA_WAREHOUSE=build/wh ./build/compare_activity 2023-01-10 [every_nth]
 """
 
 from std.sys import argv

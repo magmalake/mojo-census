@@ -33,9 +33,9 @@ from dista import ObjectRef, Task
 from iceberg.batch import ColumnBuilder, batch_of
 from iceberg.catalog.filesystem import Table
 from iceberg.values import Datum
-from orca import Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, orca_main
-from orca.civil import now
-from orca.tables import append, ensure_table, scan, table
+from morca import Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, morca_main
+from morca.civil import now
+from morca.tables import append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from activity import (
@@ -80,7 +80,7 @@ comptime ActivityTasks = Tasks[DayTask]
 def _members(mut ctx: Ctx) raises -> Dict[String, Int64]:
     """The repositories of mojo.repos at the step's pinned snapshot, with the
     day each was created (0 if GitHub didn't say)."""
-    # `scan(ctx, ...)` is orca's pinned scan: a retry of the step sees the
+    # `scan(ctx, ...)` is morca's pinned scan: a retry of the step sees the
     # same members even if mojo_repos has committed since.
     var out = Dict[String, Int64]()
     var t = table(ctx, REPOS)
@@ -154,7 +154,7 @@ def _loaded_days(hours: Table, pinned: Int64) raises -> List[String]:
     """The days gharchive.repo_hour holds at the pinned snapshot, from its
     data files' day partitions, sorted.
 
-    This used to walk the table's snapshots for their `orca.partition`,
+    This used to walk the table's snapshots for their `morca.partition`,
     which expiry takes away (the table keeps a week of them); the files a
     snapshot reads are what it holds whatever history is left."""
     var seen = Dict[Int64, Bool]()
@@ -465,7 +465,7 @@ def activity(mut ctx: Ctx, d: Day) raises -> Int:
 
 
 # `Mapped` runs the step once per partition (a `Day`). `reads`/`writes` are
-# enforced by `orca.tables` and drawn as lineage in the UI. All three reads
+# enforced by `morca.tables` and drawn as lineage in the UI. All three reads
 # are datasets this pipeline doesn't write, which is what makes it a sensor
 # on them.
 comptime Activity = Step[
@@ -494,6 +494,6 @@ comptime MojoActivity = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[MojoActivity]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[MojoActivity]()

@@ -19,7 +19,7 @@ A rerun doesn't duplicate rows: a repository already in `mojo.commits` gets
 no commits or migrations again, and one already in `mojo.tags` no tags. A
 repository with a history but no tags yet (read before tags were) is
 cloned without file contents and only its tags read (`read_tags`), so
-`orca backfill --rerun mojo_history @all` fills `mojo.tags` for every
+`morca backfill --rerun mojo_history @all` fills `mojo.tags` for every
 repository and leaves the other tables as they are.
 `MOJO_HISTORY_MAX_KB` skips repositories GitHub says are bigger than that
 (for local runs; modular/modular is gigabytes).
@@ -30,9 +30,9 @@ from std.os import getenv, setenv
 from dista import ObjectRef, Seq, Task
 from iceberg.batch import ColumnBuilder, batch_of
 from iceberg.values import Datum
-from orca import Ctx, Gather, Name, Pipeline, Step, Tasks, orca_main
-from orca.keyed import Keyed
-from orca.tables import append, ensure_table, scan, table
+from morca import Ctx, Gather, Name, Pipeline, Step, Tasks, morca_main
+from morca.keyed import Keyed
+from morca.tables import append, ensure_table, scan, table
 
 from cols import col, i64_at, str_at
 from history import History, TagRow, join_tags, read_history, read_tags
@@ -52,7 +52,7 @@ from lake import (
 
 # The dista tasks of this pipeline: functions that run on a worker process.
 # Both take the repository name and return a `History` (errors included, so
-# a task never fails the run); `Tasks[...]` lists them for the runtime orca
+# a task never fails the run); `Tasks[...]` lists them for the runtime morca
 # starts at the beginning of a run, which a step reaches through
 # `ctx.runtime`. A worker does the clone, so the step process never holds a
 # repository.
@@ -64,7 +64,7 @@ comptime HistoryTasks = Tasks[ReadHistory, ReadTags]
 def _sizes(mut ctx: Ctx) raises -> Dict[String, Int64]:
     """`size_kb` of every repository in mojo.repos, at the step's pinned
     snapshot (a declared read, so lineage runs back to gharchive.events)."""
-    # `table` and `scan` (unlike a plain `t.scan()`) go through orca: the
+    # `table` and `scan` (unlike a plain `t.scan()`) go through morca: the
     # scan is pinned to the snapshot the step first read, so a retry sees the
     # same repositories, and the dataset is checked against `reads=`.
     var out = Dict[String, Int64]()
@@ -261,7 +261,7 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
             m_kind.add(Datum.string_(m.kind))
             m_from.add(str_or_null(m.from_value))
             m_to.add(str_or_null(m.to_value))
-    # `append` is orca's: it records the step, run and attempt in the
+    # `append` is morca's: it records the step, run and attempt in the
     # snapshot's summary, and a retry that finds its own earlier commit
     # returns it instead of appending again.
     var n = len(c_repo)
@@ -290,7 +290,7 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
 # `Gather` runs the step once per run with all the run's keys as a `Seq`
 # (a `Mapped` step runs once per partition). Here the keys are repository
 # names, and one run reads up to `keys_per_run` of them. `reads` and `writes`
-# are enforced by `orca.tables` and give the lineage the UI draws: REPOS is
+# are enforced by `morca.tables` and give the lineage the UI draws: REPOS is
 # read only, which is what makes this a sensor on it.
 comptime Histories = Step[
     "histories",
@@ -307,8 +307,8 @@ comptime Histories = Step[
 # when a run of another pipeline commits a snapshot of a dataset this one
 # reads and doesn't write (mojo.repos), the scheduler starts a run over the
 # keys that snapshot added. `workers=4` sizes the dista cluster a run gets on
-# Kubernetes (locally orca forks `ORCA_WORKERS`); how many clones run at once
-# on the Hetzner server is `DISTA_WORKER_SLOTS` in orca.toml. `max_runs` stays
+# Kubernetes (locally morca forks `MORCA_WORKERS`); how many clones run at once
+# on the Hetzner server is `DISTA_WORKER_SLOTS` in morca.toml. `max_runs` stays
 # at its default of 1: one run at a time.
 comptime MojoHistory = Pipeline[
     "mojo_history",
@@ -322,6 +322,6 @@ comptime MojoHistory = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[MojoHistory]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[MojoHistory]()

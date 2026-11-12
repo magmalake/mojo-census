@@ -18,7 +18,7 @@ from deflate import gzip
 from iceberg.catalog.filesystem import FilesystemCatalog, Table
 from iceberg.io import FileIO
 from iceberg.write import WriteOptions
-from orca.tables import DataFiles as FileEntries
+from morca.tables import DataFiles as FileEntries
 from parquet import ParquetReader
 from parquet_full import AllCodecs
 

@@ -2,8 +2,8 @@ name: CI
 
 on:
   push:
-    # dev: the branch the deployed images come from (orca.mojo
-    # docs/hetzner.md, "A dev stack"); lab: the lab stack's, for testing orca
+    # dev: the branch the deployed images come from (morca
+    # docs/hetzner.md, "A dev stack"); lab: the lab stack's, for testing morca
     # itself. main runs only the tests.
     branches: [main, dev, lab]
     tags: ['*']
@@ -32,14 +32,14 @@ jobs:
           pixi-version: v0.78.0
       - run: pixi run build
       - run: pixi run test
-      # orca.dev.toml (the dev stack's) has orca.toml's pipelines, without
+      # morca.dev.toml (the dev stack's) has morca.toml's pipelines, without
       # fills or a worker pool's placement, plus the dev-only ballast (#97).
-      - name: orca.dev.toml matches orca.toml
+      - name: morca.dev.toml matches morca.toml
         run: |
-          diff <(grep '^\[pipelines\.' orca.toml) <(grep '^\[pipelines\.' orca.dev.toml | grep -vx '\[pipelines\.ballast\]')
-          ! grep -nE '^[[:space:]]*(fills|fill_[a-z_]+|placement)[[:space:]]*=' orca.dev.toml
+          diff <(grep '^\[pipelines\.' morca.toml) <(grep '^\[pipelines\.' morca.dev.toml | grep -vx '\[pipelines\.ballast\]')
+          ! grep -nE '^[[:space:]]*(fills|fill_[a-z_]+|placement)[[:space:]]*=' morca.dev.toml
 
-  # Build the image `orca aws push` builds, then run one hour of GH Archive
+  # Build the image `morca aws push` builds, then run one hour of GH Archive
   # through the gharchive pipeline inside it: the Linux-only failures (a
   # library that won't link, a CA bundle in the wrong place) show up here
   # rather than on AWS. Not on main: what was merged there is built when it
@@ -47,7 +47,7 @@ jobs:
   # build it, without pushing).
   #
   # One per architecture, each on its own runner (no emulation), built for a
-  # baseline CPU (Dockerfile.orca, MOJO_TARGET_CPU) and pushed as
+  # baseline CPU (Dockerfile.morca, MOJO_TARGET_CPU) and pushed as
   # <tag>-<arch>; `manifest` joins them under the tags deploys use.
   image-arch:
     name: image (${{ matrix.arch }}, ${{ matrix.runner }}, ${{ matrix.cpu }})
@@ -81,12 +81,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.orca
+          file: Dockerfile.morca
           tags: gharchive-image
           load: true
           build-args: |
-            ORCA_SOURCE=https://github.com/${{ github.repository }}
-            ORCA_COMMIT=${{ github.sha }}
+            MORCA_SOURCE=https://github.com/${{ github.repository }}
+            MORCA_COMMIT=${{ github.sha }}
             CENSUS_VERSION=${{ github.ref_type == 'tag' && github.ref_name || '' }}
             MOJO_TARGET_CPU=${{ matrix.cpu }}
           labels: |
@@ -94,16 +94,16 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
       - name: Size
         run: docker image ls gharchive-image --format '{{.Size}}'
-      # Both settings files as `orca register` checks them.
-      - name: orca config check, orca.toml, orca.dev.toml and orca.lab.toml
+      # Both settings files as `morca register` checks them.
+      - name: morca config check, morca.toml, morca.dev.toml and morca.lab.toml
         run: |
-          docker run --rm gharchive-image config check /opt/orca/orca.toml
-          docker run --rm gharchive-image config check /opt/orca/orca.dev.toml
-          docker run --rm gharchive-image config check /opt/orca/orca.lab.toml
+          docker run --rm gharchive-image config check /opt/morca/morca.toml
+          docker run --rm gharchive-image config check /opt/morca/morca.dev.toml
+          docker run --rm gharchive-image config check /opt/morca/morca.lab.toml
       - name: One hour of 2025-01-01 inside the image
         run: |
           docker run --rm --entrypoint sh \
-            -e GHARCHIVE_HOURS=0 -e ORCA_WAREHOUSE=/tmp/w gharchive-image \
+            -e GHARCHIVE_HOURS=0 -e MORCA_WAREHOUSE=/tmp/w gharchive-image \
             -c 'gharchive run --partitions 2025-01-01'
       # The encoder (max-core) links and loads in the image; its numbers are
       # checked by magmalake/encoder.mojo's own CI on the same runner type.
@@ -112,14 +112,14 @@ jobs:
       - name: The console starts and answers
         run: |
           docker run -d --name console -p 8080:8080 -e PORT=8080 \
-            -e ORCA_WAREHOUSE=/tmp/w --entrypoint console gharchive-image
+            -e MORCA_WAREHOUSE=/tmp/w --entrypoint console gharchive-image
           for i in $(seq 1 30); do
             curl -sf -o /dev/null http://127.0.0.1:8080/ && exit 0
             sleep 1
           done
           docker logs console
           exit 1
-      # What deploy/hetzner expects in orca.mojo: ghcr.io/morca-dev/census:<tag>,
+      # What deploy/hetzner expects in morca: ghcr.io/morca-dev/census:<tag>,
       # pushed here as <tag>-<arch> from the image tested above, which
       # `manifest` joins under <tag>. On dev, lab and tags only; pull requests
       # build and test but never push. The tags (dev's, lab's and a tag's):

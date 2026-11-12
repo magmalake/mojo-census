@@ -2,7 +2,7 @@
 # Every program, as two multi-call binaries (scripts/multicall.sh) and a
 # link per program:
 #
-#   BIN_DIR/multicall-apps        orca (bin/scheduler.mojo) and console
+#   BIN_DIR/multicall-apps        morca (bin/scheduler.mojo) and console
 #   BIN_DIR/multicall-pipelines   every pipeline and every other bin/*.mojo
 #
 #   scripts/build.sh BIN_DIR PIPELINES_DIR [mojo build flags...]
@@ -10,8 +10,8 @@
 # Two, not one, until flare declares mmap and munmap (Linux) and accept
 # (macOS) as memory-region and dista do: two `external_call`s of one C
 # function with different signatures don't compile in one program, and only
-# the flare servers (orca ui, the console) reach flare's. One binary needs
-# magmalake/flare_mlake's mmap-signature branch, released, and orca-mojo and
+# the flare servers (morca ui, the console) reach flare's. One binary needs
+# magmalake/flare_mlake's mmap-signature branch, released, and morca-mojo and
 # k8s-mojo pinning it. Run inside `pixi run`.
 set -eu
 bin=$1

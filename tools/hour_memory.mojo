@@ -1,14 +1,14 @@
 """Peak memory of one local GH Archive hour, a stage at a time.
 
     mojo build -I src tools/hour_memory.mojo -o build/hour_memory
-    ORCA_WAREHOUSE=build/warehouse ./build/hour_memory 2023-01-10-15.json.gz full
+    MORCA_WAREHOUSE=build/warehouse ./build/hour_memory 2023-01-10-15.json.gz full
 
 The stages add up: `read` holds the whole `.json.gz` (which `fetch.Download`
 no longer does: it gives decoded input back as it goes, so subtract the
 file's size for the pipeline's figure),
 `gunzip` decodes it a window at a time, `parse` builds the batches and drops
 each, `index` also builds the hour's `HourIndex`, `sort` also sorts each
-batch, `write` also writes the events (into `ORCA_WAREHOUSE`, whose tables a
+batch, `write` also writes the events (into `MORCA_WAREHOUSE`, whose tables a
 gharchive run made), and `full` also writes the index tables, which is what
 an hour's task does. `noevents` is what an hour's task does with
 `GHARCHIVE_EVENTS=off`: the parse builds no rows, only the index, and writes
@@ -21,7 +21,7 @@ from std.sys import argv
 from std.time import perf_counter_ns
 
 from deflate import GzipReader, InflateStatus
-from orca.tables import load_dataset
+from morca.tables import load_dataset
 
 from datafiles import BatchSink, TableWriter
 from eventrows import EventRows, order_by_repo_type

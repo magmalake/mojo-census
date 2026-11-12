@@ -1,7 +1,7 @@
 """Holds a set amount of memory and keeps a set number of cores busy, so a
-run's peaks are known in advance: what orca's learned requests (orca #269,
+run's peaks are known in advance: what morca's learned requests (morca #269,
 `memory_gb = "auto"`) are checked against on the dev stack (#97). Only
-orca.dev.toml registers it; it reads and writes no table.
+morca.dev.toml registers it; it reads and writes no table.
 
 Daily partitions from 2011-01-01, one run a day, run by hand (no schedule).
 Each day's amounts come from `PLAN`, a list of segments in order; a day past
@@ -9,13 +9,13 @@ the last segment fails. `BALLAST_HOLD_S` (default 20) is how long a run
 holds its memory and cores.
 
     ./build/ballast run --partitions 2011-01-01
-    docker exec scheduler orca backfill ballast 2011-01-01..2011-01-22
+    docker exec scheduler morca backfill ballast 2011-01-01..2011-01-22
 """
 
 from std.os import getenv, setenv
 from std.time import perf_counter_ns
 
-from orca import Ctx, Daily, Day, Mapped, Pipeline, Step, orca_main
+from morca import Ctx, Daily, Day, Mapped, Pipeline, Step, morca_main
 from threads import OpaquePtr, opaque_ptr, parallel_for
 
 from days import days_of
@@ -101,6 +101,6 @@ comptime Ballast = Pipeline["ballast", Hold, partitions=Daily["2011-01-01"]]
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[Ballast]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[Ballast]()

@@ -4,12 +4,12 @@ The code behind [Mojourney: the Mojo ecosystem census](https://mojourney.dev).
 
 A lake of GitHub activity built on [magmalake](https://magmalake.org), and
 a console that shows how Mojo repos have grown. Everything is Mojo, in
-one pixi project: five [orca](https://github.com/morca-dev/morca)
-pipelines write Iceberg tables, the project's own `orca` schedules them,
+one pixi project: five [morca](https://github.com/morca-dev/morca)
+pipelines write Iceberg tables, the project's own `morca` schedules them,
 and a [flare](https://github.com/magmalake/flare_mlake) app reads the
 tables.
 
-It runs on AWS: the console is at <https://mojourney.dev>, and orca's UI,
+It runs on AWS: the console is at <https://mojourney.dev>, and morca's UI,
 with every run, log and table, at <https://orca.mojourney.dev>. The
 [getting-started guide](https://mlake.dev/getting-started/) builds it two
 ways, with an agent from [PROMPT.md](PROMPT.md) or step by step.
@@ -49,7 +49,7 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   groups, so an hour in flight takes about 450 MB:
   `tools/hour_memory.mojo` measures it); the step commits each hour's files
   to the events as one append, in order, and a retry skips the hours already
-  committed. A new run of a day that has rows (`orca backfill --rerun`)
+  committed. A new run of a day that has rows (`morca backfill --rerun`)
   replaces them: its first hour's commit removes the day's earlier files.
   While an hour's task parses its events it also builds three small tables'
   rows: `gharchive.candidates` (one row per repository, hour and reason: the
@@ -70,7 +70,7 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   events ("Without the events" below).
 - **`pipelines/gharchive_index.mojo`**: a one-off that fills those three
   tables for days loaded before gharchive wrote them, reading each hour of
-  `gharchive.events` once (`orca backfill gharchive_index <days>`).
+  `gharchive.events` once (`morca backfill gharchive_index <days>`).
 - **`pipelines/mojo_repos.mojo`**: a sensor on `gharchive.candidates`. For each
   day it reads the candidates (repository names, the `language` of repository
   objects that pull-request and fork payloads embed, commit messages
@@ -93,13 +93,13 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   version) and `mojo.tags` (each git tag: the commit, annotated or not, its
   date, and the tooling, packaging and Mojo version at that commit). A repository already in a table isn't written to it
   again; one with a history and no tags is cloned without file contents
-  for its tags only, so `orca backfill --rerun mojo_history @all` fills
+  for its tags only, so `morca backfill --rerun mojo_history @all` fills
   `mojo.tags` for repositories read before tags were.
 - **`pipelines/mojo_retool.mojo`**: a one-off that re-reads the histories
   mojo_history already read and replaces their rows (used when `tooling`
   learned `bazel`, a root `MODULE.bazel`/`WORKSPACE`/`BUILD.bazel`, which
   outranks pixi, and again for the Python build tools and `packaging`:
-  `orca backfill --rerun mojo_retool @all`).
+  `morca backfill --rerun mojo_retool @all`).
 - **`pipelines/mojo_versions.mojo`**: keyed by repository like mojo_history
   (50 a run, a sensor on `mojo.repos`), for the repositories whose lock file
   and manifest name no Mojo version (early projects, installed with `modular
@@ -114,7 +114,7 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   apart from them the release current at the last commit that touched a
   Mojo file (`version_estimate`, source `date`, from the table in
   `mojo_releases.mojo`). Rows are replaced like mojo_retool's, so
-  `orca backfill --rerun mojo_versions @all` fills the repositories already
+  `morca backfill --rerun mojo_versions @all` fills the repositories already
   in the lake and a rerun gives the same rows. The console shows the
   detected version with its source ("24.4, from CI"), `no-manifest` apart
   from `unknown`, and the estimate as "~24.3 by date" (the Overview's donuts
@@ -134,8 +134,8 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   total) and "Used by" on each repo page, a Used by column in the Repos
   table and "Most depended on" on the Overview. To fill them for the
   repositories read before (new ones get them from their first run), after
-  deploying the image: `docker exec scheduler orca register` (the step now
-  reads and writes `mojo.repo_deps`), then `docker exec scheduler orca
+  deploying the image: `docker exec scheduler morca register` (the step now
+  reads and writes `mojo.repo_deps`), then `docker exec scheduler morca
   backfill --rerun mojo_versions @all` (runs of 50; the console picks the
   rows up at its next refresh).
   `tools/head_versions.mojo` tries the readers on named repositories and
@@ -173,7 +173,7 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   7 s on four arm64 cores. The model isn't in the image: a run downloads
   what `MOJO_EMBED_MODEL` lacks (133 MB) from Hugging Face, pinned to a
   revision, and checks the weights' hash (`model_rev`).
-- **`pipelines/mojo_live.mojo`**: hourly partitions (orca `Hourly`), one run
+- **`pipelines/mojo_live.mojo`**: hourly partitions (morca `Hourly`), one run
   an hour that polls every 20 minutes until the hour ends: GitHub's GraphQL
   API gives the default-branch heads of 100 repositories a query (1 point),
   and each repository whose head moved gives its latest commits. The new
@@ -201,12 +201,12 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   `replace.mojo` replaces a table's rows by partition. `overview.mojo` computes the
   Overview's numbers, `listing.mojo` the Repos table's sorting and filters,
   and `charts.mojo` draws the SVG charts.
-- **`tools/drop_run.mojo`**: removes the rows one orca run appended to one
+- **`tools/drop_run.mojo`**: removes the rows one morca run appended to one
   partition (how 2026-10-13, loaded twice before gharchive replaced a
   rerun's day, was repaired).
 
 What the magmalake libraries were missing while this was built is tracked as
-GitHub issues in each library's repository (orca.mojo, iceberg.mojo,
+GitHub issues in each library's repository (morca, iceberg.mojo,
 dista.mojo, json_mlake, flare_mlake, deflate.mojo, threads.mojo, and mojoshelf);
 the census's own open work is in [this repository's issues](https://github.com/morca-dev/census/issues).
 
@@ -214,7 +214,7 @@ the census's own open work is in [this repository's issues](https://github.com/m
 
 [Develop locally](https://mlake.dev/getting-started/develop) on mlake.dev
 covers this section with timings, what needs the network, and how to try a
-change to orca, iceberg or parquet in the census before it is released. It
+change to morca, iceberg or parquet in the census before it is released. It
 builds for macOS arm64 and linux-aarch64 (`pixi.toml`'s platforms); there is
 no linux-64 build. The first `pixi run build` compiles every dependency and
 takes about nine minutes and 19 GB under `.pixi` (`.pixi/bld`, 18 GB of it, is
@@ -227,8 +227,8 @@ zstd-mojo 0.1.5 they find their shared libraries without `CONDA_PREFIX`),
 though Postgres and `git` come from the pixi environment.
 
 ```sh
-pixi run build      # build/orca, build/console, build/{gharchive,mojo_repos,...}: links to two multi-call binaries
-pixi run build-gharchive   # one program alone (build-orca, build-console, build-mojo-stats...)
+pixi run build      # build/morca, build/console, build/{gharchive,mojo_repos,...}: links to two multi-call binaries
+pixi run build-gharchive   # one program alone (build-morca, build-console, build-mojo-stats...)
 pixi run test       # version ordering, history and tag parsing, events, activity, GitHub stats
 ```
 
@@ -242,7 +242,7 @@ credentials from the environment, so export your AWS login first:
 pixi run build-console
 eval "$(aws configure export-credentials --profile <profile> --format env)"
 export AWS_REGION=us-east-2
-ORCA_WAREHOUSE=s3://mlake-public-617847241090/warehouse PORT=8080 pixi run ./build/console
+MORCA_WAREHOUSE=s3://mlake-public-617847241090/warehouse PORT=8080 pixi run ./build/console
 ```
 
 ### The pipelines on their own
@@ -266,7 +266,7 @@ No database needed; `GHARCHIVE_HOURS` keeps the download to two hourly files
 (about 100 MB each):
 
 ```sh
-export ORCA_WAREHOUSE=$PWD/build/warehouse
+export MORCA_WAREHOUSE=$PWD/build/warehouse
 GHARCHIVE_HOURS=15,17 pixi run ./build/gharchive run --partitions 2024-06-12
 pixi run ./build/mojo_repos run --partitions 2024-06-12
 MOJO_HISTORY_MAX_KB=100000 pixi run ./build/mojo_history run --partitions @all
@@ -292,7 +292,7 @@ log. A download that stops mid-body resumes from the byte it stopped at
 (`Range`). A 404 (an hour not yet published) and a repository that is gone
 or private are not retried; a repository whose clone still fails is logged
 as failed for that run, and mojo_versions keeps its old row. The settings,
-all in the environment (orca.toml's `env`):
+all in the environment (morca.toml's `env`):
 
 | Variable | Default | What it bounds |
 |---|---|---|
@@ -340,10 +340,10 @@ written to `gharchive.events`, and the table isn't created if it is missing.
   counts the days named by the snapshots of the events or of
   `gharchive.repo_hour`, which gharchive commits either way.
 
-It is set in the environment of the server's gharchive pipeline (orca.toml's
+It is set in the environment of the server's gharchive pipeline (morca.toml's
 `env` is where it would go).
 
-### The orca way: Postgres, the scheduler and the UI
+### The morca way: Postgres, the scheduler and the UI
 
 A Postgres that lasts between sessions, under `build/` (from conda-forge's
 `postgresql`, in `pixi.toml`):
@@ -354,7 +354,7 @@ pixi run pg_ctl -D build/pg -l build/pg.log -o "-k $PWD/build -c listen_addresse
 pixi run createdb -h "$PWD/build" -U postgres orca
 ```
 
-`scripts/env.sh` sets `ORCA_DATABASE_URL` to it, the warehouse and logs
+`scripts/env.sh` sets `MORCA_DATABASE_URL` to it, the warehouse and logs
 under `build/`, `GHARCHIVE_HOURS=15,17`, `MOJO_HISTORY_MAX_KB=100000` (skips
 modular/modular, which is over a gigabyte) and a 10-second sense interval.
 Register the pipelines **before** loading data (a sensor only counts
@@ -364,21 +364,21 @@ above, delete `build/warehouse` first), then backfill one day:
 ```sh
 pixi shell
 . scripts/env.sh
-for p in gharchive mojo_repos mojo_history mojo_activity mojo_stats; do ./build/orca locate build/$p --root .; done
-./build/orca register ./build/gharchive ./build/mojo_repos ./build/mojo_history ./build/mojo_activity ./build/mojo_stats
-./build/orca scheduler &                 # fires, senses, starts runs
-./build/orca ui &                        # http://127.0.0.1:8270
-./build/orca backfill gharchive 2024-06-12
+for p in gharchive mojo_repos mojo_history mojo_activity mojo_stats; do ./build/morca locate build/$p --root .; done
+./build/morca register ./build/gharchive ./build/mojo_repos ./build/mojo_history ./build/mojo_activity ./build/mojo_stats
+./build/morca scheduler &                 # fires, senses, starts runs
+./build/morca ui &                        # http://127.0.0.1:8270
+./build/morca backfill gharchive 2024-06-12
 ```
 
 The scheduler then runs gharchive for the day, which starts mojo_repos for
 the same day (sensor), whose snapshot of `mojo.repos` starts mojo_history
 for the repositories it added (keyed sensor). Watch it in the UI or in
-`build/logs/<pipeline>/<run>/`. If port 8270 is taken (another orca UI),
-start the UI with `ORCA_UI_ADDR=127.0.0.1:8275`. `./build/orca lineage
+`build/logs/<pipeline>/<run>/`. If port 8270 is taken (another morca UI),
+start the UI with `MORCA_UI_ADDR=127.0.0.1:8275`. `./build/morca lineage
 mojo.commits` traces the histories back to the `gharchive.events` snapshot
 and run they came from.
-`scripts/with-postgres.sh` (from orca) runs a command against a throwaway
+`scripts/with-postgres.sh` (from morca) runs a command against a throwaway
 server instead.
 
 Without a token, GitHub allows 60 API requests an hour, and mojo_repos
@@ -388,7 +388,7 @@ them first. To check them for that day once the limit has reset (an hour
 later), re-run the day, which already succeeded:
 
 ```sh
-./build/orca backfill --rerun mojo_repos 2024-06-12
+./build/morca backfill --rerun mojo_repos 2024-06-12
 ```
 
 Set `GITHUB_TOKEN` to lift the limit. Stop everything with
@@ -396,20 +396,20 @@ Set `GITHUB_TOKEN` to lift the limit. Stop everything with
 
 ### Registering on the server
 
-`orca.toml` at the repository root says how each scheduled pipeline runs
+`morca.toml` at the repository root says how each scheduled pipeline runs
 (`max_runs`, fills, `DISTA_WORKER_SLOTS`, secrets), each setting with a
-comment. `Dockerfile.orca` puts it in the image at `/opt/orca/orca.toml`
-(`ORCA_CONFIG`), next to the pipelines (`ORCA_PIPELINES_DIR`), so on the
-server registering is `docker exec scheduler orca register` (orca after
-0.10.0). To change a setting: edit `orca.toml`, merge, deploy the new image,
+comment. `Dockerfile.morca` puts it in the image at `/opt/morca/morca.toml`
+(`MORCA_CONFIG`), next to the pipelines (`MORCA_PIPELINES_DIR`), so on the
+server registering is `docker exec scheduler morca register` (morca after
+0.10.0). To change a setting: edit `morca.toml`, merge, deploy the new image,
 register again. `mojo_retool` has no schedule and runs only by hand, but it is in the file too, so registering keeps it available for a release's upgrade steps (`upgrade.toml`).
 
 ### The dev stack
 
-orca.mojo's [dev stack](https://github.com/morca-dev/morca/blob/main/docs/hetzner.md#a-dev-stack)
+morca's [dev stack](https://github.com/morca-dev/morca/blob/main/docs/hetzner.md#a-dev-stack)
 is a second, smaller server for trying a release or a deploy-script change
-before production. Its scheduler reads `orca.dev.toml` (the image has it at
-`/opt/orca/orca.dev.toml`; the stack sets `ORCA_CONFIG` to it): the same
+before production. Its scheduler reads `morca.dev.toml` (the image has it at
+`/opt/morca/morca.dev.toml`; the stack sets `MORCA_CONFIG` to it): the same
 pipelines, without fills or the bgent pool, so it never backfills from 2023.
 CI keeps the two files' pipelines the same.
 
@@ -418,21 +418,21 @@ pushes `ghcr.io/morca-dev/census:<short sha>` and `:dev`. main builds no image
 (`:latest` stays at main's last one, `c1f9fd7`). To release, bring `dev` up
 to main (`git push origin origin/main:dev`, or a merge of main into `dev` when
 it has commits of its own), deploy the short sha to the dev stack, then the
-same tag to production. To try an orca.mojo commit, pin it on `dev`
-(`orca-mojo = { git = ..., rev = "<sha>" }` in `pixi.toml`, then `pixi
+same tag to production. To try a morca commit, pin it on `dev`
+(`morca-mojo = { git = ..., rev = "<sha>" }` in `pixi.toml`, then `pixi
 lock`) and push.
 
 ### A second machine
 
 The git-heavy pipelines, mojo_history, mojo_versions and mojo_activity, can run
-on a second machine as an orca remote worker, while the CAX21 keeps the
+on a second machine as a morca remote worker, while the CAX21 keeps the
 scheduler, the UI, Postgres, the site, gharchive's fill, mojo_repos and
 mojo_stats. The worker holds no database credentials and needs only outbound
 HTTPS to the UI and to the bucket, no inbound ports. The census ran it on
 "bgent", an Apple-silicon Mac running Docker: arm64 like the CAX21, so the same
-image. (orca's [docs/workers.md](https://github.com/morca-dev/morca/blob/main/docs/workers.md)
+image. (morca's [docs/workers.md](https://github.com/morca-dev/morca/blob/main/docs/workers.md)
 and the [Workers page](https://mlake.dev/s/orca/docs/workers) cover the
-general case; remote workers need orca 0.14.0.) It did that while gharchive's
+general case; remote workers need morca 0.14.0.) It did that while gharchive's
 backfill had the CAX21's cores; since 2026-11-09 they run on the server
 again, and this section is how to move them back.
 
@@ -440,10 +440,10 @@ On the server, a token for the pool, printed once (copy it to the worker
 machine as `worker-token`):
 
 ```sh
-docker exec scheduler orca worker-token create --pool bgent --label bgent
+docker exec scheduler morca worker-token create --pool bgent --label bgent
 ```
 
-Place the three pipelines on the pool in `orca.toml`, then deploy and register
+Place the three pipelines on the pool in `morca.toml`, then deploy and register
 again as in [Registering on the server](#registering-on-the-server):
 
 ```toml
@@ -470,7 +470,7 @@ Then the worker, with `s3.env` holding the bucket's `AWS_ACCESS_KEY_ID` and
 ```sh
 docker run -d --name orca-worker --restart always \
   --env-file s3.env -v orca-worker-secrets:/etc/orca/w:ro \
-  -e ORCA_WAREHOUSE=s3://census-mlake-dev/warehouse -e ORCA_LOGS=s3://census-mlake-dev/logs \
+  -e MORCA_WAREHOUSE=s3://census-mlake-dev/warehouse -e MORCA_LOGS=s3://census-mlake-dev/logs \
   -e AWS_REGION=nbg1 -e AWS_ENDPOINT_URL_S3=https://nbg1.your-objectstorage.com \
   -e MOJO_HISTORY_WORKDIR=/work/clones -v census-work:/work \
   ghcr.io/morca-dev/census:<tag> worker --pool bgent --max-runs 3 --remote https://orca.mojourney.dev --token-file /etc/orca/w/token
@@ -478,16 +478,16 @@ docker run -d --name orca-worker --restart always \
 
 `--max-runs 3` lets the three pipelines run at once; the worker admits runs
 against its own host (its log says, for example, "grants up to 8 CPUs and
-11421 MB", less `ORCA_RESERVE_CPUS` and `ORCA_RESERVE_MEMORY_MB`).
+11421 MB", less `MORCA_RESERVE_CPUS` and `MORCA_RESERVE_MEMORY_MB`).
 `MOJO_HISTORY_WORKDIR` keeps the clones on a volume. Check it in Ops › Workers
 (`/api/workers`): heartbeat, CPUs and memory.
 
 Limits: the worker must run the server's image tag, so deploy the server first
 and then restart the worker on the same tag; fills (`fills = "all"`) don't run
-on worker pools yet (orca #177), so use `orca backfill` for a pool; and a
-pipeline that needs secrets needs `ORCA_SECRET_FETCH` on the worker (these
+on worker pools yet (morca #177), so use `morca backfill` for a pool; and a
+pipeline that needs secrets needs `MORCA_SECRET_FETCH` on the worker (these
 three need none: mojo_history uses no token, and mojo_stats stays on the
-server). With orca main (0.15.0), `ORCA_WORKER_ADDR` serves the worker API on
+server). With morca main (0.15.0), `MORCA_WORKER_ADDR` serves the worker API on
 a listener of its own, so slow page renders don't delay workers.
 
 ### Edge caching
@@ -523,19 +523,19 @@ client-side key), every console page's `<head>` loads PostHog the way the
 magmalake.org website does: `array.js` and the events go through `/ph` on
 the page's own origin, with memory-only persistence (no cookies, no
 `localStorage`, so no consent banner), and `site: "mojourney"` registered on
-every event (orca's UI sends `site: "orca"`), so one PostHog project can hold
+every event (morca's UI sends `site: "morca"`), so one PostHog project can hold
 both sites. If the key is unset or not a `phc_` key, the snippet is left out
 (`src/analytics.mojo`). The console doesn't serve `/ph`: on mojourney.dev
 the `mojourney-ph` Cloudflare Worker in magmalake/magmalake.org does
 (`npx wrangler deploy -c worker/mojourney-ph/wrangler.jsonc`).
 
-On the Hetzner server the console is an orca-stack app, which gets its
+On the Hetzner server the console is a morca-stack app, which gets its
 environment from `/etc/orca/app.env`. That file is written from
-`settings.env` and carries `ORCA_POSTHOG_KEY` across as `POSTHOG_KEY`
-(orca.mojo's `deploy/hetzner`, after orca 0.12.0). So set `POSTHOG_KEY=phc_...`
-in `hetzner.env` and run `./up.sh`, or add `ORCA_POSTHOG_KEY=phc_...` to
-`/etc/orca/settings.env` and run `orca-stack apply`. The same key also turns
-on orca's UI. Locally: `POSTHOG_KEY=phc_... PORT=8080 pixi run ./build/console`.
+`settings.env` and carries `MORCA_POSTHOG_KEY` across as `POSTHOG_KEY`
+(morca's `deploy/hetzner`, after morca 0.12.0). So set `POSTHOG_KEY=phc_...`
+in `hetzner.env` and run `./up.sh`, or add `MORCA_POSTHOG_KEY=phc_...` to
+`/etc/orca/settings.env` and run `morca-stack apply`. The same key also turns
+on morca's UI. Locally: `POSTHOG_KEY=phc_... PORT=8080 pixi run ./build/console`.
 
 ### What a local run produced
 
@@ -543,31 +543,31 @@ On 2024-06-12, hours 15 and 17: 476,227 events (154 MB of Parquet), 23
 candidates, 4 Mojo repositories (NuMojo, Mojonet, mojo-flx and
 modular/modular, which was skipped for size), 3 histories read, 372
 commits and 27 migrations. [docs/first-local-run.md](docs/first-local-run.md)
-has the run as the scheduler did it, on orca 0.3.1.
+has the run as the scheduler did it, on morca 0.3.1.
 
 ## Table history
 
-Every table keeps thirty days of snapshots (orca's default) and
+Every table keeps thirty days of snapshots (morca's default) and
 `gharchive.events` a week (`lake.events_properties`, 168 hourly commits);
 each commit deletes the metadata files beyond the last hundred. The
 scheduler expires every table by that policy once a day through
-`build/orca_maintain` (`bin/orca_maintain.mojo`, built by `pixi run build`
-beside `orca`), keeping whatever a run that can still resume read or
+`build/morca_maintain` (`bin/morca_maintain.mojo`, built by `pixi run build`
+beside `morca`), keeping whatever a run that can still resume read or
 committed, and the last run's snapshots. By hand:
 
 ```
-./build/orca expire gharchive.events --older-than 7d --dry-run --report
-./build/orca expire --all          # each table by its own policy
+./build/morca expire gharchive.events --older-than 7d --dry-run --report
+./build/morca expire --all          # each table by its own policy
 ```
 
 ## What's left for AWS
 
 Not done in this local run:
 
-- `orca aws up` (stack, hostnames for the UI and the console, Budgets
-  email), `orca aws push` (the linux-aarch64 image; `pixi.toml` already has
-  the platform, `postgresql` and `git`), `orca aws register --workers 0..4
-  gharchive mojo_repos mojo_history`, `orca aws app console`.
+- `morca aws up` (stack, hostnames for the UI and the console, Budgets
+  email), `morca aws push` (the linux-aarch64 image; `pixi.toml` already has
+  the platform, `postgresql` and `git`), `morca aws register --workers 0..4
+  gharchive mojo_repos mojo_history`, `morca aws app console`.
 - A `GITHUB_TOKEN` in Secrets Manager (`orca/github-token`) registered with
   `--secret GITHUB_TOKEN=orca/github-token` for mojo_repos; with it the
   check budget is 1000 a run. GitHub code search (finding `pixi.toml`s that
@@ -575,7 +575,7 @@ Not done in this local run:
 - Unset `GHARCHIVE_HOURS` and `MOJO_HISTORY_MAX_KB` on AWS (all 24 hours,
   every repository); check the size of a day's run instance, since the
   history step holds 50 repositories' rows and modular/modular is large.
-- Backfill one month (`./build/orca aws ...` then `orca backfill gharchive
+- Backfill one month (`./build/morca aws ...` then `morca backfill gharchive
   2025-01-01..2025-01-31`) to see the cost, then the rest from 2023-01-01.
   Note that recent hours of GH Archive carry much smaller payloads.
 - `mojo.repos` stars and forks are as of the day a repository was found;

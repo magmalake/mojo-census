@@ -9,7 +9,7 @@ tooling, 2026-11; Python build tools and packaging, #116) is followed by
 one run over every repository. It is keyed by the `repo` column of
 `mojo.repos` like mojo_history, 50 a run:
 
-    orca backfill --rerun mojo_retool @all
+    morca backfill --rerun mojo_retool @all
 
 A repository that mojo_history hasn't read yet is skipped (it will read it
 the new way), and one whose clone fails keeps the rows it has. For the rest
@@ -24,9 +24,9 @@ before and after, and a rerun gives the same.
 from std.os import getenv, setenv
 
 from dista import ObjectRef, Task
-from orca import Ctx, Gather, Name, Pipeline, Step, Tasks, orca_main
-from orca.keyed import Keyed
-from orca.tables import ensure_table, scan, table
+from morca import Ctx, Gather, Name, Pipeline, Step, Tasks, morca_main
+from morca.keyed import Keyed
+from morca.tables import ensure_table, scan, table
 from dista import Seq
 from parquet import RecordBatch
 
@@ -45,7 +45,7 @@ from cols import col, i64_at, str_at
 
 # The same dista task as mojo_history's: it runs on a worker, clones one
 # repository and returns its `History` (with `error` set on failure rather
-# than raising). `Tasks[...]` lists the tasks orca starts a runtime for, which
+# than raising). `Tasks[...]` lists the tasks morca starts a runtime for, which
 # the step reaches through `ctx.runtime`.
 comptime ReadHistory = Task[String, History, read_history]
 comptime RetoolTasks = Tasks[ReadHistory]
@@ -224,7 +224,7 @@ def retool(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
 # `Gather` runs the step once per run, with all the run's keys as a `Seq`.
 # Unlike mojo_history, COMMITS, MIGRATIONS and TAGS are both read and written
 # and REPOS only read, and there is no `sensor=True`: nothing starts this but
-# `orca backfill`.
+# `morca backfill`.
 comptime Retool = Step[
     "retool",
     Seq[Name],
@@ -234,8 +234,8 @@ comptime Retool = Step[
     retries=1,
     reads=[REPOS, COMMITS, MIGRATIONS, TAGS],
     # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
-    # adding them again, so `orca backfill --rerun` needs no --allow-append.
-    # Under replaces=, an orca.tables `append` to them would replace whole
+    # adding them again, so `morca backfill --rerun` needs no --allow-append.
+    # Under replaces=, a morca.tables `append` to them would replace whole
     # partitions, other keys' rows included: keep writing through replace_files.
     replaces=[COMMITS, MIGRATIONS, TAGS],
 ]
@@ -252,6 +252,6 @@ comptime MojoRetool = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[MojoRetool]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[MojoRetool]()

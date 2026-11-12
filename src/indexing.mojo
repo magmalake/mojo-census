@@ -4,15 +4,15 @@ files with the first commit.
 `gharchive.events` gets a snapshot an hour (`commit_hour`). Its companions
 (`candidates`, `repo_hour`, `releases`) get one snapshot a day from gharchive
 (`commit_day`) and one an hour from gharchive_index (`commit_hour`). Each
-table counts its own commits (`orca.tables.find_commit`), so a retried step
+table counts its own commits (`morca.tables.find_commit`), so a retried step
 finds, per table, what it already committed.
 """
 
 from iceberg.catalog.filesystem import Table
 from iceberg.commit import FileChanges
 from iceberg.manifest import DataFile
-from orca import Ctx
-from orca.tables import append, append_files, commit, find_commit
+from morca import Ctx
+from morca.tables import append, append_files, commit, find_commit
 from parquet import RecordBatch
 
 from days import day_text, days_of

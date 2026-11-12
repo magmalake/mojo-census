@@ -20,8 +20,8 @@ from std.time import perf_counter_ns
 from iceberg.batch import ColumnBuilder, batch_of
 from iceberg.catalog.filesystem import Table
 from iceberg.values import Datum
-from orca.tables import DataFiles as FileEntries
-from orca.tables import FileWriter
+from morca.tables import DataFiles as FileEntries
+from morca.tables import FileWriter
 from parquet import RecordBatch
 
 from activity import parse_release

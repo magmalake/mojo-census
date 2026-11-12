@@ -2,7 +2,7 @@
 rows that are not marker rows (no repository), an order-independent hash of
 those, how many marker rows there are, and the number of snapshots.
 
-    ORCA_WAREHOUSE=build/warehouse pixi run mojo run -I src tools/dump_index.mojo gharchive.candidates [2024-06-12]
+    MORCA_WAREHOUSE=build/warehouse pixi run mojo run -I src tools/dump_index.mojo gharchive.candidates [2024-06-12]
 
 `scripts/test-daily.sh` compares these across runs. Tables: gharchive.candidates,
 gharchive.repo_hour, gharchive.releases, gharchive.events (a day, optionally).

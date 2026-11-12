@@ -12,7 +12,7 @@ from events import parse_events
 from iceberg.io import FileIO
 from iceberg.write import WriteOptions, write_data_files
 from lake import events_schema, events_spec
-from orca.tables import DataFiles as FileEntries
+from morca.tables import DataFiles as FileEntries
 
 
 def _lines() -> List[UInt8]:
@@ -35,7 +35,7 @@ def test_round_trip() raises:
     )
     assert_equal(len(files), 2)  # two days, two partitions
     # The struct crosses by dista's reflection: its plain fields as they
-    # are, `files` through orca's `DataFiles` Codec (iceberg's wire form).
+    # are, `files` through morca's `DataFiles` Codec (iceberg's wire form).
     var sent = DataFiles()
     sent.files = FileEntries(files.copy())
     sent.rows = 300

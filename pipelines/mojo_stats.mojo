@@ -22,9 +22,9 @@ from std.os import getenv, setenv
 from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of_columns
 from iceberg.nested import ColumnTree
 from iceberg.values import Datum
-from orca import Cron, Ctx, Current, Daily, Day, Mapped, Pipeline, Step, orca_main
-from orca.civil import now
-from orca.tables import ensure_table, scan, table
+from morca import Cron, Ctx, Current, Daily, Day, Mapped, Pipeline, Step, morca_main
+from morca.civil import now
+from morca.tables import ensure_table, scan, table
 from parquet import RecordBatch
 
 from cols import bool_at, col, i32_at, i64_at, str_at, strs_at
@@ -252,8 +252,8 @@ comptime Refresh = Step[
     retries=1,
     reads=[REPOS],
     # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
-    # adding them again, so `orca backfill --rerun` needs no --allow-append.
-    # Under replaces=, an orca.tables `append` to them would replace whole
+    # adding them again, so `morca backfill --rerun` needs no --allow-append.
+    # Under replaces=, a morca.tables `append` to them would replace whole
     # partitions, other keys' rows included: keep writing through replace_files.
     replaces=[REPO_STATS],
 ]
@@ -273,6 +273,6 @@ comptime MojoStats = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[MojoStats]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[MojoStats]()
