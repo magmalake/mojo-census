@@ -14,7 +14,7 @@ backfill) polls once.
 
 A poll that fails is logged and the next one tries again; the step has no
 retries, as a retry would skip the commits its first attempt made
-(`orca.tables.find_commit`) and lose those polls' rows.
+(`morca.tables.find_commit`) and lose those polls' rows.
 
     GITHUB_TOKEN=... ./build/mojo_live run --partitions 2026-11-11T07
 """
@@ -24,9 +24,9 @@ from std.time import sleep
 
 from iceberg.batch import ColumnBuilder, batch_of
 from iceberg.values import Datum
-from orca import Cron, Ctx, Current, Hour, Hourly, Mapped, Pipeline, Step, orca_main
-from orca.civil import now
-from orca.tables import append, ensure_table, scan, table
+from morca import Cron, Ctx, Current, Hour, Hourly, Mapped, Pipeline, Step, morca_main
+from morca.civil import now
+from morca.tables import append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from cols import col, i64_at, str_at
@@ -239,6 +239,6 @@ comptime MojoLive = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[MojoLive]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[MojoLive]()

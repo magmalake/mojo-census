@@ -1,19 +1,19 @@
 #!/bin/sh
 # Several programs in one binary, which runs the program its name says,
 # `basename "$0"`, as that program's own binary would. The library code they
-# share (orca, iceberg, parquet...) is compiled once, not once per program,
+# share (morca, iceberg, parquet...) is compiled once, not once per program,
 # and is in the image once.
 #
 #   scripts/multicall.sh BINARY BIN_DIR PIPELINES_DIR PROGRAM.mojo... \
 #       [-- mojo build flags...]
 #
 # writes BIN_DIR/BINARY and, for each program, a symbolic link to it:
-# BIN_DIR/orca for bin/scheduler.mojo (the two lines calling orca.command),
+# BIN_DIR/morca for bin/scheduler.mojo (the two lines calling morca.command),
 # BIN_DIR/<name> for any other bin/<name>.mojo and PIPELINES_DIR/<name> for
 # pipelines/<name>.mojo. PIPELINES_DIR is BIN_DIR or a directory beside it
-# (the image's /opt/orca/bin and /opt/orca/pipelines). Each program keeps
+# (the image's /opt/morca/bin and /opt/morca/pipelines). Each program keeps
 # its argv, `argv()[0]` included, so its subcommands, exit codes and what
-# orca reads of it (describe, locate, orca_maintain beside orca, the
+# morca reads of it (describe, locate, morca_maintain beside morca, the
 # DISTA_ROLE re-exec) are those of its own binary. Run under its own name,
 # or copied under another, BINARY runs none of them and says so: link it.
 #
@@ -38,7 +38,7 @@ trap 'rm -rf "$gen"' EXIT
 main=$gen/multicall_main.mojo
 name_of() {
     n=$(basename "$1" .mojo)
-    [ "$1" = bin/scheduler.mojo ] && n=orca
+    [ "$1" = bin/scheduler.mojo ] && n=morca
     echo "$n"
 }
 {

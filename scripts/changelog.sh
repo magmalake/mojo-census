@@ -3,7 +3,7 @@
 # the section "## <version> - <today>", ordered by PR number, and deletes them.
 # The steps files beside them (changes/<pr>-<slug>.after.toml and
 # changes/release.after.toml) become the version's entry in upgrade.toml,
-# which the image ships for deploy.sh to show and run (orca.mojo#323), and the
+# which the image ships for deploy.sh to show and run (morca#323), and the
 # section's "Before deploying" / "After deploying" lists; they are deleted too.
 #
 #   sh scripts/changelog.sh 0.2.0
@@ -45,7 +45,7 @@ if [ -n "$steps_files" ]; then
             if (!open) return
             if (id == "") { printf "%s: a step has no id\n", FILENAME > "/dev/stderr"; bad = 1 }
             if ((run == "") == (manual == "")) { printf "%s: step %s needs one of run or manual\n", FILENAME, id > "/dev/stderr"; bad = 1 }
-            if (run != "" && run !~ /^orca /) { printf "%s: step %s: run must be an orca command\n", FILENAME, id > "/dev/stderr"; bad = 1 }
+            if (run != "" && run !~ /^morca /) { printf "%s: step %s: run must be a morca command\n", FILENAME, id > "/dev/stderr"; bad = 1 }
             if (when != "before" && when != "after") { printf "%s: step %s: when is before or after\n", FILENAME, id > "/dev/stderr"; bad = 1 }
             if (id in seen) { printf "%s: step id %s twice\n", FILENAME, id > "/dev/stderr"; bad = 1 }
             seen[id] = 1
@@ -69,17 +69,17 @@ if [ -n "$steps_files" ]; then
     ' $steps_files > "$steps"
 fi
 
-# A run step's pipeline must be registered: in orca.toml and orca.dev.toml,
-# whose [pipelines.<name>] tables are what `orca register` registers. The
+# A run step's pipeline must be registered: in morca.toml and morca.dev.toml,
+# whose [pipelines.<name>] tables are what `morca register` registers. The
 # steps already in upgrade.toml are checked too.
 missing=$(
     { awk -F '\t' '$3 == "run" { print $1 "\t" $4 }' "$steps"
       awk '/^id = / { id = $3; gsub(/"/, "", id) } /^run = / { r = $0; sub(/^run = "/, "", r); sub(/"$/, "", r); print id "\t" r }' upgrade.toml
     } | while IFS="$(printf '\t')" read -r id cmd; do
-        # The pipeline is the first word after the orca subcommand that isn't a flag.
+        # The pipeline is the first word after the morca subcommand that isn't a flag.
         p=$(printf '%s\n' "$cmd" | awk '{ for (i = 3; i <= NF; i++) if ($i !~ /^-/) { print $i; exit } }')
         [ -n "$p" ] || continue
-        for f in orca.toml orca.dev.toml; do
+        for f in morca.toml morca.dev.toml; do
             grep -q "^\[pipelines\.$p\]" "$f" || echo "step $id: $p isn't a [pipelines.$p] of $f, so it isn't registered there"
         done
     done

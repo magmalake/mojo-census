@@ -1,6 +1,6 @@
 """Replacing a table's rows by partition, so a rerun doesn't duplicate them.
 
-orca.tables has `append` and `commit`; a step that recomputes some of a
+morca.tables has `append` and `commit`; a step that recomputes some of a
 table's rows reads the partitions those rows live in, keeps the rows it
 didn't recompute, and commits one `overwrite` snapshot that removes the
 partitions' files and adds the kept rows with the new ones. A retried
@@ -9,15 +9,15 @@ doesn't write again.
 
 This is safe for one writer per table at a time; the pipelines that use it
 run one run at a time (`max_runs=1`). Two writers that read before either
-commits would both keep the other's rows (magmalake/orca.mojo#120, orca's
+commits would both keep the other's rows (morca-dev/morca#120, morca's
 replace mode, and magmalake/iceberg.mojo#83).
 """
 
 from iceberg.catalog.filesystem import Table
 from iceberg.commit import FileChanges
 from iceberg.scan import FileScanTask
-from orca import Ctx
-from orca.tables import append, commit, find_commit, write_files
+from morca import Ctx
+from morca.tables import append, commit, find_commit, write_files
 from parquet import RecordBatch
 
 

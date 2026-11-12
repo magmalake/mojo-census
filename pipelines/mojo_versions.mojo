@@ -11,7 +11,7 @@ repositories it adds. A repository that mojo_history hasn't read is read here
 all the same (this step clones it without file contents). Run for the
 repositories already in the lake by hand:
 
-    orca backfill --rerun mojo_versions @all
+    morca backfill --rerun mojo_versions @all
 
 which is also how `mojo.repo_deps` and `declared_deps` were filled for the
 repositories read before dependencies were (a row of `mojo.repo_versions`
@@ -34,10 +34,10 @@ the rows it had.
 from std.os import getenv, setenv
 
 from dista import ObjectRef, Seq, Task
-from orca.civil import now
-from orca import Ctx, Gather, Name, Pipeline, Step, Tasks, orca_main
-from orca.keyed import Keyed
-from orca.tables import ensure_table, scan, table
+from morca.civil import now
+from morca import Ctx, Gather, Name, Pipeline, Step, Tasks, morca_main
+from morca.keyed import Keyed
+from morca.tables import ensure_table, scan, table
 
 from deps import RepoDep, decode_deps
 from headversion import HeadVersion, read_head_version
@@ -48,7 +48,7 @@ from replace import replace_files
 # A dista `Task` runs on a worker process: it clones one repository and
 # returns a `HeadVersion` (with `error` set rather than raising, so one bad
 # repository doesn't fail the run). `Tasks[...]` lists the tasks whose
-# runtime orca starts for a run; the step reaches it with `ctx.runtime`.
+# runtime morca starts for a run; the step reaches it with `ctx.runtime`.
 comptime ReadHead = Task[String, HeadVersion, read_head_version]
 comptime VersionTasks = Tasks[ReadHead]
 
@@ -180,8 +180,8 @@ comptime Versions = Step[
     retries=1,
     reads=[REPOS, REPO_VERSIONS, REPO_DEPS],
     # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
-    # adding them again, so `orca backfill --rerun` needs no --allow-append.
-    # Under replaces=, an orca.tables `append` to them would replace whole
+    # adding them again, so `morca backfill --rerun` needs no --allow-append.
+    # Under replaces=, a morca.tables `append` to them would replace whole
     # partitions, other keys' rows included: keep writing through replace_files.
     replaces=[REPO_VERSIONS, REPO_DEPS],
 ]
@@ -200,6 +200,6 @@ comptime MojoVersions = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[MojoVersions]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[MojoVersions]()

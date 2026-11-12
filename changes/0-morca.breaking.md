@@ -1,0 +1,1 @@
+- **On morca-mojo 0.25.0, as morca**: the image has `/opt/morca`, `morca.toml` (and `morca.dev.toml`, `morca.lab.toml`) and every `MORCA_*` variable in place of their orca names; a stack deploying it needs its `ORCA_*` settings renamed `MORCA_*` first.

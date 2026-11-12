@@ -1,18 +1,18 @@
-# How the census's pipelines run under orca. `orca register` (no arguments) in
+# How the census's pipelines run under morca. `morca register` (no arguments) in
 # the scheduler container reads this file: the image has it at
-# /opt/orca/orca.toml (ORCA_CONFIG) and the binaries at /opt/orca/pipelines.
+# /opt/morca/morca.toml (MORCA_CONFIG) and the binaries at /opt/morca/pipelines.
 # To change a setting: edit this file, merge, deploy the new image, register
-# again. morca-dev/morca docs/orca-toml.md and docs/hetzner.md say more.
+# again. morca-dev/morca docs/morca-toml.md and docs/hetzner.md say more.
 
 [defaults]
 # One run of a pipeline at a time. Concurrent commits to one table are safe
-# since iceberg-mojo 0.11.1 (magmalake/orca.mojo#164), but on the CAX21 the
+# since iceberg-mojo 0.11.1 (morca-dev/morca#164), but on the CAX21 the
 # cores, not the runs, are the limit: gharchive goes faster with more hours in
 # flight in one run (below) than with more runs.
 max_runs = 1
 
 [pipelines.gharchive]
-# Learned from the last runs' peaks (orca #269), at most 6 GB: two fill runs
+# Learned from the last runs' peaks (morca #269), at most 6 GB: two fill runs
 # fit the CAX21's ~6.5 GB to grant. No cpus: two learned 2-CPU requests
 # against 3 grantable cores would hold the second fill run.
 memory_gb = "auto..6"
@@ -28,7 +28,7 @@ fill_max_runs = 2
 # 00:00 UTC the day that just ended isn't all there: the fill's load_day
 # attempts failed until the last hour appeared (~00:09), and the failures
 # tripped the watchdog, which paused gharchive (run 5172, 2026-11-09). With
-# the lag a day fills from 02:00 UTC (orca docs/orca-toml.md#the-lag).
+# the lag a day fills from 02:00 UTC (morca docs/morca-toml.md#the-lag).
 fill_lag = "2h"
 # DISTA_WORKER_SLOTS: dista workers in one process. GHARCHIVE_PARALLEL: hours
 # in flight at once; its default of 16 is sized for four AWS instances. Keep
@@ -67,13 +67,13 @@ env = { DISTA_WORKER_SLOTS = "2", GHARCHIVE_PARALLEL = "2", GHARCHIVE_EVENTS = "
 env = { DISTA_WORKER_SLOTS = "1" }
 
 [pipelines.mojo_repos]
-# Learned (orca #269), so every pipeline on the host is counted.
+# Learned (morca #269), so every pipeline on the host is counted.
 memory_gb = "auto"
 # With a token mojo_repos checks 1000 candidates a run, 25 without.
 secrets = { GITHUB_TOKEN = "orca/github-token" }
 
 [pipelines.mojo_history]
-# Learned (orca #269), at most 4 GB, so its clones count against gharchive's grants.
+# Learned (morca #269), at most 4 GB, so its clones count against gharchive's grants.
 memory_gb = "auto..4"
 # Clones (here and in mojo_versions): GIT_TIMEOUT_SECONDS (600) kills one
 # that runs longer, GIT_RETRIES (3) more tries with backoff, and git aborts a
@@ -89,27 +89,27 @@ env = { DISTA_WORKER_SLOTS = "2" }
 
 [pipelines.mojo_retool]
 # Run by hand after a release that changes what the history reader records
-# (upgrade.toml's `orca backfill --rerun mojo_retool @all`): it reads every
+# (upgrade.toml's `morca backfill --rerun mojo_retool @all`): it reads every
 # repository's history again, as mojo_history does, so the same limits.
 memory_gb = "auto..4"
 env = { DISTA_WORKER_SLOTS = "2" }
 
 [pipelines.mojo_versions]
-# Learned (orca #269), at most 4 GB.
+# Learned (morca #269), at most 4 GB.
 memory_gb = "auto..4"
 # Blobless clones of the repositories whose version is unknown, one dista
 # task each; no GitHub API, so no token.
 env = { DISTA_WORKER_SLOTS = "2" }
 
 [pipelines.mojo_activity]
-# Learned (orca #269), at most 4 GB.
+# Learned (morca #269), at most 4 GB.
 memory_gb = "auto..4"
 env = { DISTA_WORKER_SLOTS = "2" }
 
 # Daily at 06:00 UTC; one GET /repos/{owner}/{repo} per repository, which
 # unauthenticated is 60 an hour.
 [pipelines.mojo_stats]
-# Learned (orca #269).
+# Learned (morca #269).
 memory_gb = "auto"
 secrets = { GITHUB_TOKEN = "orca/github-token" }
 

@@ -3,7 +3,7 @@ version as donuts, the growth curves, Rising, Most active and Most depended
 on."""
 
 from flare.http import Request, Response, html_escape, internal_error, redirect
-from orca.civil import now
+from morca.civil import now
 
 from charts import compact, compact_bytes, donut, line_chart
 from days import day_text
@@ -21,7 +21,7 @@ from overview import (
 )
 
 from console_cache import Cache, refresh_secs
-from console_how import ORCA_UI
+from console_how import MORCA_UI
 from console_layout import _empty, _help, _n, _page, _this_month
 from console_list import _raw_query
 
@@ -360,10 +360,10 @@ def _span(secs: Int) -> String:
     return String(mins // 60, " h ", mins % 60, " min") if mins % 60 > 0 else String(mins // 60, " h")
 
 
-comptime HISTORY_KEYS = ORCA_UI + "/pipelines/mojo_history"
-"""mojo_history's keys on orca: which repos' histories are read."""
-comptime ARCHIVE_COVERAGE = ORCA_UI + "/pipelines/gharchive?tab=operate&cov=year#coverage"
-"""gharchive's coverage calendar on orca, by year: which days are loaded."""
+comptime HISTORY_KEYS = MORCA_UI + "/pipelines/mojo_history"
+"""mojo_history's keys on morca: which repos' histories are read."""
+comptime ARCHIVE_COVERAGE = MORCA_UI + "/pipelines/gharchive?tab=operate&cov=year#coverage"
+"""gharchive's coverage calendar on morca, by year: which days are loaded."""
 
 
 def overview(req: Request, c: Cache) raises -> Response:
@@ -685,7 +685,7 @@ def overview(req: Request, c: Cache) raises -> Response:
                 "h-asof", "the data",
                 String(
                     "As of the latest snapshot of the tables behind this page; every run is on <a href='",
-                    ORCA_UI, "/runs' rel=noopener>orca.mojourney.dev/runs</a>. Repos are discovered",
+                    MORCA_UI, "/runs' rel=noopener>orca.mojourney.dev/runs</a>. Repos are discovered",
                     " from the GH Archive days loaded so far: a repo is found only when an event of it",
                     " falls on a loaded day, so the repo count is a lower bound.",
                 ),

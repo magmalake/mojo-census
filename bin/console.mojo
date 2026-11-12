@@ -43,7 +43,7 @@ from flare.http import (
     redirect,
 )
 from flare.net import SocketAddr
-from orca.civil import now
+from morca.civil import now
 from threads import OpaquePtr, ThreadHandle
 
 from checks import CheckRun, RepoFacts, Tops, notice, page_facts, publish, run_checks, when

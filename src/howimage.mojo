@@ -7,7 +7,7 @@ then `base64` it into the string below.
 - `HETZNER_SERVER_WEBP`: the census server's summary in Hetzner's console
   (4 vCPU, 8 GB, 80 GB + 50 GB, 0/20 TB, 12.49 a month), 1200 px wide from the
   1656 px PNG, about 12 KB.
-- `LINEAGE_LIGHT_WEBP`, `LINEAGE_DARK_WEBP`: the lineage graph on orca's
+- `LINEAGE_LIGHT_WEBP`, `LINEAGE_DARK_WEBP`: the lineage graph on morca's
   Datasets page (https://orca.mojourney.dev/datasets), its `svg.graph`
   captured at 2x in each colour scheme and resized to 654 px wide (1.5x of the
   436 px it is shown at), -q 80, about 50 KB each.

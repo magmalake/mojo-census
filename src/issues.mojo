@@ -18,7 +18,7 @@ from detect import long_of
 from fetch import github
 from jscan import Range, each, field, micros_to_iso, text, timestamp_micros
 from lake import issues_schema, json_strings, str_or_null, try_load, ts, ts_or_null
-from orca.civil import now
+from morca.civil import now
 from overview import BASE_MONTH, DAY_US, Overview, month_of_days
 from stats import limited, state_of, wait_seconds
 

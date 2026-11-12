@@ -1,17 +1,17 @@
 """Data files written on a dista worker, sent back to the step to commit.
 
 An hour's task writes its Parquet files into the table's `data/` itself and
-returns only their `DataFile` entries (`orca.tables.DataFiles`, which dista
+returns only their `DataFile` entries (`morca.tables.DataFiles`, which dista
 carries as a `Codec`), which the step commits as one append
-(`orca.tables.append_files`).
+(`morca.tables.append_files`).
 """
 
 from std.os import getenv
 from std.time import perf_counter_ns
 
 from iceberg.catalog.filesystem import Table
-from orca.tables import DataFiles as FileEntries
-from orca.tables import FileWriter
+from morca.tables import DataFiles as FileEntries
+from morca.tables import FileWriter
 from threads import num_cpus
 
 from eventrows import (

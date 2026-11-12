@@ -6,7 +6,7 @@ chips."""
 from std.os import getenv
 
 from flare.http import Response, html_escape
-from orca.civil import now
+from morca.civil import now
 
 from analytics import posthog_snippet
 from overview import month_label, month_of_days
@@ -202,12 +202,12 @@ comptime FEEDBACK = "https://github.com/morca-dev/census/issues"
 
 def census_version() -> String:
     """The release the console is (`1.2.0`, from CENSUS_VERSION, set on a
-    release image), else `dev <commit>` (ORCA_COMMIT), else `dev`."""
+    release image), else `dev <commit>` (MORCA_COMMIT), else `dev`."""
     var raw = getenv("CENSUS_VERSION")
     var v = String(raw[byte=1:]) if raw.startswith("v") else raw
     if v:
         return v
-    var c = getenv("ORCA_COMMIT")
+    var c = getenv("MORCA_COMMIT")
     if c:
         return String("dev ", c[byte = : min(7, c.byte_length())])
     return String("dev")
@@ -215,7 +215,7 @@ def census_version() -> String:
 
 def _version_link() -> String:
     var v = census_version()
-    var commit = getenv("ORCA_COMMIT")
+    var commit = getenv("MORCA_COMMIT")
     return String(
         "<a class=ver href='/how/changelog' title='",
         html_escape(String("commit ", commit) if commit else String("this build")),
@@ -266,11 +266,11 @@ def _page(
         _nav("/live", "Live", section == "live"),
         _nav("/how", "How it works", section == "how"),
         "<span class=sep aria-hidden=true></span>",
-        "<a href='https://orca.mojourney.dev' rel=noopener title='The pipelines that build this census'>orca<span class=arrow> &#8599;</span></a><a href='https://mlake.dev' rel=noopener>mlake.dev<span class=arrow> &#8599;</span></a></nav></div></header>",
+        "<a href='https://orca.mojourney.dev' rel=noopener title='The pipelines that build this census'>morca<span class=arrow> &#8599;</span></a><a href='https://mlake.dev' rel=noopener>mlake.dev<span class=arrow> &#8599;</span></a></nav></div></header>",
         "<main><div class=wrap>", body, "</div></main>",
         "<footer><div class=wrap><p>An independent project; Mojo is a trademark of Modular Inc.",
         " Data from <a href='https://www.gharchive.org' rel=noopener>GH Archive</a>, read by the",
-        " mojo-census pipelines on <a href='https://orca.mojourney.dev' rel=noopener>orca</a>: the hour's",
+        " mojo-census pipelines on <a href='https://orca.mojourney.dev' rel=noopener>morca</a>: the hour's",
         " public GitHub events, the repositories with Mojo in them, and what their lock files",
         " say at each commit.</p>",
         "<nav><a href='https://mlake.dev' rel=noopener>mlake.dev</a>",

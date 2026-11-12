@@ -2,7 +2,7 @@
 # gharchive commits its three index tables once a day. This checks, on three
 # real hours of GH Archive (about 300 MB of downloads), that
 #   - the index rows are the rows the hourly commits of origin/main wrote,
-#   - a step that fails after k hours is retried (orca's SQLite store gives
+#   - a step that fails after k hours is retried (morca's SQLite store gives
 #     the run a number) and ends with exactly the same rows and one commit
 #     of each index table, rebuilding the skipped hours from the events,
 #   - a failure after the index commits is retried without committing again,
@@ -28,7 +28,7 @@ mkdir -p "$W"
 
 mojo build -I src tools/dump_index.mojo -o "$W/dump_index"
 digest() { # warehouse table
-  out=$(ORCA_WAREHOUSE="$1" "$W/dump_index" "$2") || exit 1
+  out=$(MORCA_WAREHOUSE="$1" "$W/dump_index" "$2") || exit 1
   [ -n "$out" ] || { echo "FAIL: no digest of $2 in $1" >&2; exit 1; }
   echo "$out"
 }
@@ -45,10 +45,10 @@ same() { # warehouse-a warehouse-b
   done
 }
 echo "== origin/main, an hour a commit"
-ORCA_WAREHOUSE=$W/old $OLD run --partitions $DAY > "$W/old.log"
+MORCA_WAREHOUSE=$W/old $OLD run --partitions $DAY > "$W/old.log"
 
 echo "== a day a commit"
-ORCA_WAREHOUSE=$W/new $NEW run --partitions $DAY > "$W/new.log"
+MORCA_WAREHOUSE=$W/new $NEW run --partitions $DAY > "$W/new.log"
 same "$W/old" "$W/new"
 for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
   [ "$(snaps "$W/new" $t)" = 1 ] || fail "$t: not one snapshot"
@@ -56,7 +56,7 @@ for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
 done
 
 echo "== fails after 2 hours, retried"
-ORCA_DATABASE_URL=sqlite:///$W/resume.db ORCA_WAREHOUSE=$W/resume \
+MORCA_DATABASE_URL=sqlite:///$W/resume.db MORCA_WAREHOUSE=$W/resume \
   GHARCHIVE_FAIL_AFTER=2 $NEW run --partitions $DAY > "$W/resume.log"
 grep -q "2 hours already committed" "$W/resume.log" || fail "no resume"
 grep -q "rebuilding the index of the 2 committed hours" "$W/resume.log" \
@@ -65,7 +65,7 @@ same "$W/new" "$W/resume"
 [ "$(snaps "$W/resume" gharchive.candidates)" = 1 ] || fail "resume: two commits"
 
 echo "== fails after the index commits, retried"
-ORCA_DATABASE_URL=sqlite:///$W/end.db ORCA_WAREHOUSE=$W/end \
+MORCA_DATABASE_URL=sqlite:///$W/end.db MORCA_WAREHOUSE=$W/end \
   GHARCHIVE_FAIL_AFTER=end $NEW run --partitions $DAY > "$W/end.log"
 grep -q "3 hours already committed" "$W/end.log" || fail "no resume (end)"
 if grep -q "rebuilding" "$W/end.log"; then fail "rebuilt a committed index"; fi
@@ -75,7 +75,7 @@ for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
 done
 
 echo "== the day again replaces its rows"
-ORCA_DATABASE_URL=sqlite:///$W/new.db ORCA_WAREHOUSE=$W/new \
+MORCA_DATABASE_URL=sqlite:///$W/new.db MORCA_WAREHOUSE=$W/new \
   $NEW run --partitions $DAY > "$W/again.log"
 grep -q "replacing the" "$W/again.log" || fail "no replace"
 same "$W/old" "$W/new"
@@ -83,7 +83,7 @@ for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
   [ "$(snaps "$W/new" $t)" = 2 ] || fail "again: $t not two snapshots"
 done
 echo "== GHARCHIVE_EVENTS=off: the same index, no events"
-GHARCHIVE_EVENTS=off ORCA_WAREHOUSE=$W/off $NEW run --partitions $DAY > "$W/off.log"
+GHARCHIVE_EVENTS=off MORCA_WAREHOUSE=$W/off $NEW run --partitions $DAY > "$W/off.log"
 same "$W/old" "$W/off"
 [ -e "$W/off/gharchive/events" ] && fail "off: wrote gharchive.events"
 for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
@@ -91,8 +91,8 @@ for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
 done
 
 echo "== GHARCHIVE_EVENTS=off, fails after 2 hours, retried"
-GHARCHIVE_EVENTS=off ORCA_DATABASE_URL=sqlite:///$W/off-resume.db \
-  ORCA_WAREHOUSE=$W/off-resume GHARCHIVE_FAIL_AFTER=2 \
+GHARCHIVE_EVENTS=off MORCA_DATABASE_URL=sqlite:///$W/off-resume.db \
+  MORCA_WAREHOUSE=$W/off-resume GHARCHIVE_FAIL_AFTER=2 \
   $NEW run --partitions $DAY > "$W/off-resume.log"
 grep -q "GHARCHIVE_FAIL_AFTER=2" "$W/off-resume.log" || fail "off: no failure"
 same "$W/old" "$W/off-resume"
@@ -101,8 +101,8 @@ for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
 done
 
 echo "== GHARCHIVE_EVENTS=off, fails after the index commits, retried"
-GHARCHIVE_EVENTS=off ORCA_DATABASE_URL=sqlite:///$W/off-end.db \
-  ORCA_WAREHOUSE=$W/off-end GHARCHIVE_FAIL_AFTER=end \
+GHARCHIVE_EVENTS=off MORCA_DATABASE_URL=sqlite:///$W/off-end.db \
+  MORCA_WAREHOUSE=$W/off-end GHARCHIVE_FAIL_AFTER=end \
   $NEW run --partitions $DAY > "$W/off-end.log"
 grep -q "the index is committed already" "$W/off-end.log" \
   || fail "off: no resume (end)"
@@ -113,8 +113,8 @@ done
 
 echo "== GHARCHIVE_EVENTS=off, the day again over a day loaded with them"
 ev=$(digest "$W/new" gharchive.events)
-GHARCHIVE_EVENTS=off ORCA_DATABASE_URL=sqlite:///$W/new.db \
-  ORCA_WAREHOUSE=$W/new $NEW run --partitions $DAY > "$W/off-again.log"
+GHARCHIVE_EVENTS=off MORCA_DATABASE_URL=sqlite:///$W/new.db \
+  MORCA_WAREHOUSE=$W/new $NEW run --partitions $DAY > "$W/off-again.log"
 same "$W/old" "$W/new"
 for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
   [ "$(snaps "$W/new" $t)" = 3 ] || fail "off again: $t not three snapshots"
@@ -123,19 +123,19 @@ done
 echo "== an hour GH Archive never published (#77)"
 # 2025-06-12 17:00 is a 404 for good: with the events off the day loads
 # without it; with them on, or while the hour could still be late, it fails.
-GHARCHIVE_EVENTS=off GHARCHIVE_HOURS=16,17 ORCA_WAREHOUSE=$W/gap \
+GHARCHIVE_EVENTS=off GHARCHIVE_HOURS=16,17 MORCA_WAREHOUSE=$W/gap \
   $NEW run --partitions 2025-06-12 > "$W/gap.log" || fail "gap: the day failed"
 grep -q "loaded without 1 hour GH Archive never published (17)" "$W/gap.log" \
   || fail "gap: hour 17 not named"
 for t in gharchive.candidates gharchive.repo_hour gharchive.releases; do
   [ "$(snaps "$W/gap" $t)" = 1 ] || fail "gap: $t not one snapshot"
 done
-GHARCHIVE_HOURS=17 ORCA_WAREHOUSE=$W/gap-on \
+GHARCHIVE_HOURS=17 MORCA_WAREHOUSE=$W/gap-on \
   $NEW run --partitions 2025-06-12 > "$W/gap-on.log" 2>&1 \
   && fail "gap: the day loaded with the events on"
 grep -q "with GHARCHIVE_EVENTS=on every hour" "$W/gap-on.log" || fail "gap: no reason (on)"
 GHARCHIVE_EVENTS=off GHARCHIVE_HOURS=17 GHARCHIVE_MISSING_AFTER_HOURS=1000000 \
-  ORCA_WAREHOUSE=$W/gap-late $NEW run --partitions 2025-06-12 > "$W/gap-late.log" 2>&1 \
+  MORCA_WAREHOUSE=$W/gap-late $NEW run --partitions 2025-06-12 > "$W/gap-late.log" 2>&1 \
   && fail "gap: an hour that could be late was skipped"
 echo "ok: a missing hour"
 echo "all ok"

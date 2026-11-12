@@ -18,7 +18,7 @@ image: a run downloads the files the directory lacks (133 MB, a few
 seconds) from MOJO_EMBED_MODEL_URL, BAAI/bge-small-en-v1.5 on Hugging Face
 pinned to a revision, and checks the weights' hash. That hash is the rows'
 `model_rev`, so new weights embed everything again on the next run (or at
-once: `orca backfill --rerun mojo_embed <day>`).
+once: `morca backfill --rerun mojo_embed <day>`).
 
 The table is unpartitioned and rewritten whole by each commit, one
 `overwrite` (`replace.replace_files`), as mojo_versions does.
@@ -31,9 +31,9 @@ from std.os import getenv, setenv
 from std.time import perf_counter_ns
 
 from encoder import Encoder
-from orca import Cron, Ctx, Current, Daily, Day, Mapped, Pipeline, Step, orca_main
-from orca.civil import now
-from orca.tables import ensure_table, scan, table
+from morca import Cron, Ctx, Current, Daily, Day, Mapped, Pipeline, Step, morca_main
+from morca.civil import now
+from morca.tables import ensure_table, scan, table
 
 from cols import col, has_col, i32_at, str_at, strs_at
 from embedtext import (
@@ -202,8 +202,8 @@ comptime Embed = Step[
     retries=1,
     reads=[REPOS, REPO_STATS, REPO_EMBEDDINGS],
     # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
-    # adding them again, so `orca backfill --rerun` needs no --allow-append.
-    # Under replaces=, an orca.tables `append` to them would replace whole
+    # adding them again, so `morca backfill --rerun` needs no --allow-append.
+    # Under replaces=, a morca.tables `append` to them would replace whole
     # partitions, other keys' rows included: keep writing through replace_files.
     replaces=[REPO_EMBEDDINGS],
 ]
@@ -220,6 +220,6 @@ comptime MojoEmbed = Pipeline[
 
 
 def main() raises:
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[MojoEmbed]()
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[MojoEmbed]()

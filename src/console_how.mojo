@@ -11,17 +11,17 @@ from howimage import HETZNER_SERVER_WEBP, LINEAGE_DARK_WEBP, LINEAGE_LIGHT_WEBP
 from console_layout import _nav, _page
 
 
-comptime ORCA_DOCS = "https://mlake.dev/s/orca/docs"
-comptime ORCA_UI = "https://orca.mojourney.dev"
+comptime MORCA_DOCS = "https://mlake.dev/s/orca/docs"
+comptime MORCA_UI = "https://orca.mojourney.dev"
 comptime GH = "https://github.com/magmalake"
 comptime GH_CENSUS = "https://github.com/morca-dev/census"
-comptime GH_ORCA = "https://github.com/morca-dev/morca"
+comptime GH_MORCA = "https://github.com/morca-dev/morca"
 
 comptime HOW_LEAD = (
     "<div class=prose><p class=lead>Mojourney, the Mojo ecosystem census, is a"
     " handful of pipelines and this site, all Mojo. The pipelines run on <a href='"
-    + ORCA_DOCS
-    + "' rel=noopener>orca</a>, magmalake's pipeline orchestrator, and write"
+    + MORCA_DOCS
+    + "' rel=noopener>morca</a>, magmalake's pipeline orchestrator, and write"
     " Apache Iceberg tables to Hetzner Object Storage (S3-compatible) with <a"
     " href='"
     + GH
@@ -38,11 +38,11 @@ comptime DIAGRAM = """flowchart TB
   api([GitHub API])
   git([git repositories])
   subgraph server [Hetzner CAX21]
-    sched[orca scheduler and UI, Postgres]
+    sched[morca scheduler and UI, Postgres]
     local[gharchive, mojo_repos, mojo_stats]
     sched -. starts .-> local
   end
-  subgraph mac [Mac: orca remote worker]
+  subgraph mac [Mac: morca remote worker]
     remote[mojo_history, mojo_versions, mojo_activity]
   end
   lake[(Iceberg tables in Hetzner Object Storage)]
@@ -82,12 +82,12 @@ comptime MERMAID_JS = (
 comptime HOW_PIPELINES = (
     "<div class=prose>"
     "<p class='mute note'>Rounded boxes are the sources and this site,"
-    " rectangles the pipelines and orca, cylinders storage; dotted arrows are"
-    " orca starting runs, on the server itself and on the Mac, which claims"
+    " rectangles the pipelines and morca, cylinders storage; dotted arrows are"
+    " morca starting runs, on the server itself and on the Mac, which claims"
     " them over HTTPS. Each pipeline and table is under <a href='#tables'>The"
     " tables</a>. On a narrow screen, scroll it sideways.</p>"
     "<h2>The pipelines</h2><ul><li><a href='"
-    + ORCA_UI
+    + MORCA_UI
     + "/pipelines/gharchive' rel=noopener>gharchive</a> loads <a"
     " href='https://www.gharchive.org' rel=noopener>GH Archive</a>, every public"
     " GitHub event an hour at a time, daily at 03:00 UTC for the day before. Each"
@@ -107,14 +107,14 @@ comptime HOW_PIPELINES = (
     " <code>gharchive.events</code> for the days loaded before gharchive wrote"
     " them (days whose raw events were kept).</li>"
     "<li><a href='"
-    + ORCA_UI
+    + MORCA_UI
     + "/pipelines/mojo_repos' rel=noopener>mojo_repos</a> is a sensor on"
     " <code>gharchive.candidates</code>: for each new day it asks the GitHub API"
     " about the candidates it hasn't checked before and keeps the Mojo ones in"
     " <code>mojo.repos</code>, and every answer in"
     " <code>mojo.checked</code>.</li>"
     "<li><a href='"
-    + ORCA_UI
+    + MORCA_UI
     + "/pipelines/mojo_history' rel=noopener>mojo_history</a> is keyed by"
     " repository, 50 a run, and starts when <code>mojo.repos</code> gains some:"
     " each is cloned and its full first-parent history read, the Mojo files and"
@@ -122,7 +122,7 @@ comptime HOW_PIPELINES = (
     " version in its lock file into <code>mojo.migrations</code>, and its git"
     " tags into <code>mojo.tags</code>.</li>"
     "<li><a href='"
-    + ORCA_UI
+    + MORCA_UI
     + "/pipelines/mojo_versions' rel=noopener>mojo_versions</a>, keyed the same"
     " way, reads the manifests at each repository's HEAD (<code>pixi.toml</code>,"
     " <code>mojoproject.toml</code>, <code>pyproject.toml</code>,"
@@ -131,7 +131,7 @@ comptime HOW_PIPELINES = (
     " declare into <code>mojo.repo_deps</code>. From those the site shows what each"
     " repo <em>depends on</em> and which census repos it is <em>used by</em>.</li>"
     "<li><a href='"
-    + ORCA_UI
+    + MORCA_UI
     + "/pipelines/mojo_activity' rel=noopener>mojo_activity</a> counts each"
     " repo's events per day from <code>gharchive.repo_hour</code>, with no API"
     " calls: stars, forks, releases, issues and pull requests opened, pushes and"
@@ -139,19 +139,19 @@ comptime HOW_PIPELINES = (
     " repo found today is read back over every day already loaded, so its history"
     " is complete.</li>"
     "<li><a href='"
-    + ORCA_UI
+    + MORCA_UI
     + "/pipelines/mojo_stats' rel=noopener>mojo_stats</a> asks the GitHub API"
     " about every repo each day (one request each) and keeps the stars, forks,"
     " issues and topics day by day in <code>mojo.repo_stats</code>.</li></ul>"
     "<p>Clones, in mojo_history and mojo_versions, have a time limit, retries"
     " with backoff and a minimum transfer speed; a repository that still fails"
     " is logged and skipped for that run.</p>"
-    "<h2>orca and the site</h2>"
-    "<p>orca's scheduler starts each run: on a schedule (gharchive daily,"
+    "<h2>morca and the site</h2>"
+    "<p>morca's scheduler starts each run: on a schedule (gharchive daily,"
     " mojo_stats daily too), when a table it watches gains a snapshot (the sensors"
     " and the keyed pipelines), or to fill days not run yet. It keeps the runs,"
     " their steps, attempts and logs in Postgres, and its UI at <a href='"
-    + ORCA_UI
+    + MORCA_UI
     + "/runs' rel=noopener>orca.mojourney.dev</a> shows every run, with its steps,"
     " logs, machines and the tables it wrote.</p>"
     "<p>The site is a Mojo HTTP server, built on <a href='https://github.com/ehsanmok/flare'"
@@ -162,7 +162,7 @@ comptime HOW_PIPELINES = (
     " repos by what they gained in the last 30 days: stars + 3 &times; forks + 5"
     " &times; the census repos that use it.</p>"
     "<h2>It runs on a tiny machine</h2>"
-    "<p>The site, Postgres, the orca scheduler and its UI, and most pipelines'"
+    "<p>The site, Postgres, the morca scheduler and its UI, and most pipelines'"
     " runs and workers run on one Hetzner CAX21: an ARM server with 4 vCPU,"
     " 8 GB of RAM, an 80 GB disk and a 50 GB volume, for a fixed &euro;12.49 a"
     " month. The warehouse, every table above, is in Hetzner Object Storage. An"
@@ -170,7 +170,7 @@ comptime HOW_PIPELINES = (
     " few hours at a time.</p>"
     "<p>The git-heavy pipelines, <code>mojo_history</code>,"
     " <code>mojo_versions</code> and <code>mojo_activity</code>, run on a second"
-    " machine, an Apple-silicon Mac, as an orca remote worker: it claims their"
+    " machine, an Apple-silicon Mac, as a morca remote worker: it claims their"
     " runs over HTTPS and needs no database access. Everything else stays on the"
     " CAX21.</p>"
     "<figure class=shot><img src='"
@@ -181,12 +181,12 @@ comptime HOW_PIPELINES = (
     " server's summary in the Hetzner console, which shows the price with a $"
     " sign: it is &euro;12.49 a month.</figcaption></figure>"
     "<h2 id=tables>The tables</h2>"
-    "<p>Each pipeline and the Iceberg tables it reads and writes, as orca's <a"
+    "<p>Each pipeline and the Iceberg tables it reads and writes, as morca's <a"
     " href='"
-    + ORCA_UI
+    + MORCA_UI
     + "/datasets' rel=noopener>Datasets</a> page draws them from the code.</p>"
     "<figure class='shot lineage'><a href='"
-    + ORCA_UI
+    + MORCA_UI
     + "/datasets' rel=noopener><picture><source media='(prefers-color-scheme:"
     " dark)' srcset='"
     + LINEAGE_DARK_WEBP
@@ -199,14 +199,14 @@ comptime HOW_PIPELINES = (
     " other mojo tables.'></picture></a><figcaption>Pipelines in orange, tables"
     " in teal.</figcaption></figure>"
     "<h2>More</h2>"
-    "<p>The orca docs cover <a href='"
-    + ORCA_DOCS
+    "<p>The morca docs cover <a href='"
+    + MORCA_DOCS
     + "/build' rel=noopener>writing a pipeline</a>, <a href='"
-    + ORCA_DOCS
+    + MORCA_DOCS
     + "/run' rel=noopener>running it</a>, <a href='"
-    + ORCA_DOCS
+    + MORCA_DOCS
     + "/ui' rel=noopener>the web UI</a> and <a href='"
-    + ORCA_DOCS
+    + MORCA_DOCS
     + "/debug' rel=noopener>debugging a failed run</a>; the census's own code"
     " is <a href='"
     + GH_CENSUS
@@ -268,7 +268,7 @@ def how(req: Request) raises -> Response:
 
 def changelog(req: Request) raises -> Response:
     """CHANGELOG.md, read on each request from `CENSUS_CHANGELOG` (the image's
-    /opt/orca/CHANGELOG.md; CHANGELOG.md in the working directory when unset)."""
+    /opt/morca/CHANGELOG.md; CHANGELOG.md in the working directory when unset)."""
     var url = String(GH_CENSUS, "/blob/main/CHANGELOG.md")
     var text = String()
     try:
@@ -303,10 +303,10 @@ def optimizations(req: Request) raises -> Response:
     var h = _how_head("optimizations")
     h.write(
         "<p class=lead>The census runs on one Hetzner CAX21 (4 ARM vCPUs, 8 GB, &euro;12.49 a month),",
-        " with a Mac as an orca remote worker for the git histories. There gharchive loads a day of",
+        " with a Mac as a morca remote worker for the git histories. There gharchive loads a day of",
         " GH Archive in about 1.5&ndash;3 minutes, peaking at 731 MB at the median and 801 MB at most,",
         " with about 2.4 cores busy (",
-        _link(String(ORCA_UI, "/pipelines/gharchive"), "its Resources card"),
+        _link(String(MORCA_UI, "/pipelines/gharchive"), "its Resources card"),
         ", over the last 20 runs). It keeps only the index tables it derives from each hour, not the",
         " raw events, which were 97% of the bucket at about 1.1 GB a day. The backfill finished all",
         " 1,407 days, 2023-01-01 to 2026-11-07, on 2026-11-08.</p>",
@@ -318,7 +318,7 @@ def optimizations(req: Request) raises -> Response:
         _change(
             "Bounded table history",
             "<code>gharchive.events</code> keeps a week of snapshots and every table its last 100"
-            " metadata files; <code>orca_maintain</code> expires the rest every day.",
+            " metadata files; <code>morca_maintain</code> expires the rest every day.",
             dash,
             _census_pr(20),
         ),
@@ -382,8 +382,8 @@ def optimizations(req: Request) raises -> Response:
         "<h3>One gharchive hour on AWS</h3>",
         "<p class=sub>c7g.xlarge workers, about 85,000 events an hour, median of 24 hours.</p>",
         "<div class=tbl><table><thead><tr><th>Stage</th><th class=num>Before (",
-        _link(String(ORCA_UI, "/runs/36"), "run 36"), ")</th><th class=num>After (",
-        _link(String(ORCA_UI, "/runs/48"), "run 48"), ")</th></tr></thead><tbody>",
+        _link(String(MORCA_UI, "/runs/36"), "run 36"), ")</th><th class=num>After (",
+        _link(String(MORCA_UI, "/runs/48"), "run 48"), ")</th></tr></thead><tbody>",
         _stage("task", "1,094 ms", "680 ms"),
         _stage("download", "172 ms", "130 ms"),
         _stage("gunzip", "210 ms", "154 ms"),
@@ -392,7 +392,7 @@ def optimizations(req: Request) raises -> Response:
         _stage("commit", "486 ms", "683 ms"),
         "</tbody></table></div>",
         "<p class='mute note'>Commit time grew with the table's snapshot count: ",
-        _link(String(ORCA_UI, "/runs/133"), "run 133"),
+        _link(String(MORCA_UI, "/runs/133"), "run 133"),
         " measured 1,207 ms for the commit, at about 889 snapshots, with the other stages unchanged.",
         " Bounded history (", _census_pr(20), ") stopped the growth, the index tables now commit once a",
         " day (", _census_pr(24), "), and with the events off (", _census_pr(70), ") a day makes just",
@@ -442,12 +442,12 @@ def optimizations(req: Request) raises -> Response:
             ),
         ),
         _change(
-            "iceberg #70 + orca #114",
+            "iceberg #70 + morca #114",
             "Workers hand their data files to the step to commit (<code>append_files</code>), which removes the census's own DataFile codec.",
             "<span class=mute>&ndash;</span>",
             String(
                 _link(String(GH, "/iceberg.mojo/pull/70"), "iceberg #70"), ", ",
-                _link(String(GH_ORCA, "/pull/114"), "orca #114"),
+                _link(String(GH_MORCA, "/pull/114"), "morca #114"),
             ),
         ),
         "</tbody></table></div>",

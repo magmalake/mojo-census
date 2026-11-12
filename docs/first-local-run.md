@@ -1,20 +1,20 @@
-# The first local run, the orca way (orca 0.3.1)
+# The first local run, the morca way (morca 0.3.1)
 
-Kept from the census's former GAPS.md: the census run end to end by orca's scheduler on a laptop.
+Kept from the census's former GAPS.md: the census run end to end by morca's scheduler on a laptop.
 
 
-A fresh lake and `orca` database (the `mojo.repos` schema changed), the
+A fresh lake and `morca` database (the `mojo.repos` schema changed), the
 Postgres from conda-forge under `build/pg`, `scripts/env.sh`
 (`GHARCHIVE_HOURS=15,17`, `MOJO_HISTORY_MAX_KB=100000`,
-`ORCA_SENSE_SECONDS=10`), unauthenticated GitHub (59 requests left), then:
+`MORCA_SENSE_SECONDS=10`), unauthenticated GitHub (59 requests left), then:
 
 ```
-$ ./build/orca register ./build/gharchive ./build/mojo_repos ./build/mojo_history
+$ ./build/morca register ./build/gharchive ./build/mojo_repos ./build/mojo_history
 registered gharchive
 registered mojo_repos
 registered mojo_history
-$ ./build/orca scheduler & ORCA_UI_ADDR=127.0.0.1:8275 ./build/orca ui &
-$ ./build/orca backfill gharchive 2024-06-12
+$ ./build/morca scheduler & MORCA_UI_ADDR=127.0.0.1:8275 ./build/morca ui &
+$ ./build/morca backfill gharchive 2024-06-12
 queued 1 runs
 ```
 
@@ -36,12 +36,12 @@ reaped pid 73618 exit 0                       # 3 read, modular/modular skipped 
 `modular/modular`, `mzaks/mojo-flx` and `sdgunaa/Mojonet`: NuMojo 210
 commits and 21 migrations (69,563 lines of Mojo now), Mojonet 139 commits
 and 6 migrations, mojo-flx 23 commits; 372 commits and 27 migrations in
-all, the same as on orca 0.3.0. The UI's mojo_history page shows `reads:
+all, the same as on morca 0.3.0. The UI's mojo_history page shows `reads:
 mojo.repos` and "Keys From mojo.repos @ 1204299635680259392, Keys 4,
 Done 4"; a key's page answers at `/pipelines/mojo_history/keys/sdgunaa%2FMojonet`.
 
 ```
-$ ./build/orca lineage mojo.commits
+$ ./build/morca lineage mojo.commits
 mojo.commits@4273895710494911406
 made from:
   0 mojo.commits@4273895710494911406 by mojo_history run 3 histories code 0xc80cbd207afece71 from mojo.repos@1204299635680259392
@@ -51,7 +51,7 @@ made from it:
   nothing
 ```
 
-`orca backfill mojo_repos 2024-06-12` then queued 0 runs, and `orca
+`morca backfill mojo_repos 2024-06-12` then queued 0 runs, and `morca
 backfill --rerun mojo_repos 2024-06-12` queued run 4, which found the
 same 23 candidates already settled. From a plain shell with `CONDA_PREFIX`
 unset, `./build/gharchive run --partitions 2024-06-12` (one hour, into a

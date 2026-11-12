@@ -3,8 +3,8 @@
 Build me a lake of GitHub activity with magmalake, and an app that shows how
 Mojo libraries have grown.
 
-- Make a new pixi project with orca (`pixi shelf add orca-mojo`). Use the
-  magmalake skills (orca, dista, magmalake-apps), mojoshelf's skills and
+- Make a new pixi project with morca (`pixi shelf add morca-mojo`). Use the
+  magmalake skills (morca, dista, magmalake-apps), mojoshelf's skills and
   Modular's mojo-syntax.
 - **`gharchive`**: a daily pipeline that imports each day of the GitHub
   Archive (data.gharchive.org, 24 hourly `.json.gz` files) into an Iceberg
@@ -26,6 +26,6 @@ Mojo libraries have grown.
 - **The console**: a flare app over those tables: the libraries by size and
   age, the Mojo versions they moved to over time, a page per repository.
 - Run it locally first on a few hours of the archive. Then deploy it to AWS
-  with `orca aws` (on-demand workers, autoscaling from 0), backfill one month
+  with `morca aws` (on-demand workers, autoscaling from 0), backfill one month
   to see what it costs, then the rest, and serve the console on its own
   hostname. The tables go in the public bucket.

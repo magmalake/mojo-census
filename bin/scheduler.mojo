@@ -1,4 +1,4 @@
-from orca.command import orca_command
+from morca.command import morca_command
 
 def main() raises:
-    orca_command()
+    morca_command()

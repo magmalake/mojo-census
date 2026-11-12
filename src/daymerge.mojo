@@ -12,7 +12,7 @@ that replaces them, and deletes them.
 from std.time import perf_counter_ns
 
 from iceberg.kernels import concat_into
-from orca.tables import FileWriter, load_dataset
+from morca.tables import FileWriter, load_dataset
 from parquet import ParquetReader, RecordBatch
 from parquet_full import AllCodecs
 

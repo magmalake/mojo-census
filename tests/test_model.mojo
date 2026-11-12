@@ -145,7 +145,7 @@ def test_libraries_with_head_versions() raises:
     ]
     _ = deps_t.append([repo_deps_batch(drows)])
 
-    _ = setenv("ORCA_WAREHOUSE", dir)
+    _ = setenv("MORCA_WAREHOUSE", dir)
     var b = Builder(Int(days_of("2026-11-05")))
     var libs = libraries(b)
     assert_equal(len(libs), 5)
@@ -243,7 +243,7 @@ def test_duplicate_repo_rows_keep_numbers_with_names() raises:
     _commit(c, "o/mid", "2025-07-01", 0, 100)
     _ = commits_t.append([batch_of(c)])
 
-    _ = setenv("ORCA_WAREHOUSE", dir)
+    _ = setenv("MORCA_WAREHOUSE", dir)
     var b = Builder(Int(days_of("2026-11-05")))
     var libs = libraries(b)
     # One library and one accumulator per name.
@@ -289,7 +289,7 @@ def _days_table(
     mut cat: FilesystemCatalog, name: String, keys: List[String]
 ) raises -> Table:
     """A table with a snapshot per entry of `keys`, each naming those
-    partitions in `orca.partitions` as orca's commits do."""
+    partitions in `orca.partitions` as morca's commits do."""
     var s = Schema.parse(
         '{"schema-id":0,"type":"struct","fields":['
         '{"id":1,"name":"n","required":false,"type":"long"}]}'

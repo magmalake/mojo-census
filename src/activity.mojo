@@ -15,7 +15,7 @@ from dista import Seq
 from iceberg.batch import ColumnBuilder, batch_of
 from iceberg.json import json_quote
 from iceberg.values import Datum
-from orca.tables import load_dataset
+from morca.tables import load_dataset
 from parquet import RecordBatch
 
 from cols import bool_at, col, i32_at, i64_at, str_at, str_range

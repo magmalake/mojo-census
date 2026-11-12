@@ -5,7 +5,7 @@ The gharchive_index pipeline fills `gharchive.candidates`,
 `gharchive.repo_hour` and `gharchive.releases` for days whose events were
 loaded before gharchive wrote them.
 
-A one-off, run by hand (`orca backfill gharchive_index 2026-10-01..2026-11-04`).
+A one-off, run by hand (`morca backfill gharchive_index 2026-10-01..2026-11-04`).
 For each day, a dista task per hour reads that hour of `gharchive.events` once
 and builds the same three tables gharchive builds from the download
 (`hourindex.HourIndex`); the step commits an hour as one snapshot of each
@@ -20,8 +20,8 @@ from std.os import getenv, setenv
 from std.time import perf_counter_ns
 
 from dista import ObjectRef, Task
-from orca import Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, orca_main
-from orca.tables import ensure_table, scan, table
+from morca import Ctx, Daily, Day, Mapped, Pipeline, Step, Tasks, morca_main
+from morca.tables import ensure_table, scan, table
 
 from hourindex import IndexFiles
 from indexing import commit_hour, committed_hours, day_files
@@ -43,7 +43,7 @@ from reindex import index_hour, index_job
 
 
 # A dista `Task` is a function that runs on a worker process; `Tasks[...]` is
-# the list of them this pipeline's run starts a runtime for (orca forks the
+# the list of them this pipeline's run starts a runtime for (morca forks the
 # head and workers before the first step, and `ctx.runtime` hands it to the
 # step). `IndexHour` takes a job string (`reindex.index_job`) and returns the
 # hour's index files, written to the tables but not committed.
@@ -142,7 +142,7 @@ def index_day(mut ctx: Ctx, d: Day) raises -> Int64:
 
 # A `Step` wraps `index_day` with its name, input and output types and kind.
 # `Mapped` runs it once per partition (here a `Day`) of a run. `reads` and
-# `writes` are checked by `orca.tables` (a scan or commit of an undeclared
+# `writes` are checked by `morca.tables` (a scan or commit of an undeclared
 # table is refused) and give the lineage graph in the UI. `retries=2` re-runs
 # a failed attempt in the same run; the commit recognition above makes that
 # safe.
@@ -156,7 +156,7 @@ comptime IndexDay = Step[
     reads=[EVENTS],
     writes=[CANDIDATES, REPO_HOUR, GH_RELEASES],
 ]
-# No `schedule`, so nothing fires it: run it with `orca backfill`.
+# No `schedule`, so nothing fires it: run it with `morca backfill`.
 comptime GhArchiveIndex = Pipeline[
     "gharchive_index",
     IndexDay,
@@ -168,7 +168,7 @@ comptime GhArchiveIndex = Pipeline[
 
 
 def main() raises:
-    # Local runs without ORCA_WAREHOUSE write under ./build/warehouse.
-    if not getenv("ORCA_WAREHOUSE"):
-        _ = setenv("ORCA_WAREHOUSE", "build/warehouse")
-    orca_main[GhArchiveIndex]()
+    # Local runs without MORCA_WAREHOUSE write under ./build/warehouse.
+    if not getenv("MORCA_WAREHOUSE"):
+        _ = setenv("MORCA_WAREHOUSE", "build/warehouse")
+    morca_main[GhArchiveIndex]()

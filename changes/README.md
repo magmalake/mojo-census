@@ -2,7 +2,7 @@
 
 Each PR adds its changelog entry here as one file instead of editing
 CHANGELOG.md, so open PRs don't conflict there (the same scheme as
-orca.mojo's):
+morca's):
 
 ```sh
 shelf changes new <pr>-<slug> --bump minor   # writes changes/<pr>-<slug>.minor.md
@@ -25,12 +25,12 @@ to one PR go in `changes/release.after.toml`:
 [[step]]
 id = "1.3.0-retool-subjects"     # unique and stable: a release's steps are shown once
 when = "after"                   # before (checked before the new image starts) or after
-run = "orca backfill --rerun mojo_retool @all"   # an orca command, run in the scheduler
+run = "morca backfill --rerun mojo_retool @all"   # a morca command, run in the scheduler
 # or: manual = "What to do or check, for a person."
 ```
 
 One `key = "value"` per line. The release writes them into `upgrade.toml`
-(shipped in the image for deploy.sh, orca.mojo#323) and into the version's
+(shipped in the image for deploy.sh, morca#323) and into the version's
 changelog section, under "Before deploying" and "After deploying".
 
 The census isn't a tin, so `shelf release` doesn't release it. A release is a

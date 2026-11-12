@@ -11,7 +11,7 @@ from std.time import sleep
 from detect import long_of, topics_of
 from fetch import Reply, github
 from jscan import Range, field, text, timestamp_micros
-from orca.civil import now
+from morca.civil import now
 
 
 @fieldwise_init

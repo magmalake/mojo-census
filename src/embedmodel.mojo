@@ -3,7 +3,7 @@ embeds search queries with: where it is downloaded from, its files, and the
 hash of its weights that names its revision (`model_rev`).
 
 A missing file comes from the stack's own bucket when it has a copy
-(`mirror_of`: `<bucket of ORCA_WAREHOUSE>/models/...`), and otherwise from
+(`mirror_of`: `<bucket of MORCA_WAREHOUSE>/models/...`), and otherwise from
 Hugging Face, after which it is copied to the bucket, so a stack downloads
 from Hugging Face once."""
 
@@ -67,7 +67,7 @@ def ensure_model(dir: String) raises -> List[String]:
     if len(missing) == 0:
         return log^
     var url = getenv("MOJO_EMBED_MODEL_URL", DEFAULT_URL)
-    var mirror = mirror_of(getenv("ORCA_WAREHOUSE"))
+    var mirror = mirror_of(getenv("MORCA_WAREHOUSE"))
     var io = FileIOResolver()
     var downloaded = List[String]()
     var src = url

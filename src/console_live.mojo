@@ -10,7 +10,7 @@ plus at most a minute.
 from std.time import sleep
 
 from flare.http import Handler, Request, Response, ok_json
-from orca.civil import now
+from morca.civil import now
 
 from cols import col, i64_at, str_at
 from committype import commit_type, commit_type_title
