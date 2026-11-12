@@ -4,7 +4,7 @@ authors = ["Marius S <39998+winding-lines@users.noreply.github.com>"]
 channels = ["https://conda.modular.com/max", "conda-forge"]
 name = "census"
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
-version = "1.4.1"
+version = "1.5.0"
 
 [tasks]
 # Each program alone (the image builds them all as one: `build` below).

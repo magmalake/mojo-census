@@ -1,1 +1,0 @@
-- **CI keeps Mojo's compile cache between image builds**, and pull requests build with `-g1` again, as pushed images do; a rerun of the same commit reuses the compile.
