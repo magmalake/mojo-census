@@ -21,6 +21,16 @@ for the repo page's commits and the Migrations page.
 5. Otherwise the first word (`Fix`, `Added`, `Refactor`, `Update README`,
    `Initial commit`), else `other`.
 
+6. A commit the rules leave `other` whose files are known (`Point.changes`,
+   `filemix`) gets the main type its `VOTERS` nearest labelled commits
+   (`commit_examples`) vote for, by what kinds of files they changed and
+   how much, when that type has at least `VOTE_SHARE` of the vote; else it
+   stays `other`.
+
+Secondary types (`typed_commits`): `test` or `docs` when test files or docs
+are at least `SECONDARY_SHARE` of the lines changed (and not nearly all of
+them), unless that is the main type.
+
 About a third of subjects carry a conventional prefix and the first word
 labels another quarter. On 1,546 subjects from 80 sampled census repos
 (version changes left out), the second rules (`COMMIT_TYPES_VERSION` 2)
@@ -29,10 +39,12 @@ embeddings, as the categories (#113) do it, once 100 hand-labelled commits
 can check it.
 """
 
+from committype_examples import commit_examples
+from filemix import FileMix
 from model import Migration, Point
 
 
-comptime COMMIT_TYPES_VERSION = 3
+comptime COMMIT_TYPES_VERSION = 4
 """Bumped when the rules change, so the console can say which it used."""
 
 
@@ -322,17 +334,152 @@ def has_subjects(pts: List[Point]) -> Bool:
 
 
 def commit_types(pts: List[Point], ms: List[Migration]) -> List[String]:
-    """`committype.commit_type` of each commit of `pts`, a commit with a
-    Mojo version change in `ms` counting as one."""
+    """The main type of each commit of `pts` (`typed_commits`)."""
+    var out = List[String]()
+    for ref t in typed_commits(pts, ms):
+        out.append(t.main)
+    return out^
+
+
+comptime VOTERS = 5
+comptime VOTE_SHARE = 0.5
+"""Leave-one-out on the 100 examples: 63 typed, 37 of those right (59%);
+the other 37 stay `other`."""
+comptime SECONDARY_SHARE = 0.1
+"""On the examples, 18 of the 23 secondary types it gives are right."""
+
+
+@fieldwise_init
+struct Typed(Copyable, Movable):
+    var main: String
+    """A `commit_type_keys` key, or "" for a commit without its subject."""
+    var secondary: List[String]
+    """Up to two more keys: other parts of the commit (`test`, `docs`)."""
+    var by: String
+    """`rules`, `files` (the vote) or "" (no subject)."""
+
+
+def _unit(mut v: List[Float64]):
+    var n = Float64(0)
+    for x in v:
+        n += x * x
+    if n <= 0:
+        return
+    var s = 1 / (n ** 0.5)
+    for i in range(len(v)):
+        v[i] *= s
+
+
+struct _Voters(Movable):
+    """The examples' features, centered on their mean and unit length."""
+    var mean: List[Float64]
+    var vecs: List[List[Float64]]
+    var main: List[String]
+
+    def __init__(out self):
+        self.mean = List[Float64]()
+        self.vecs = List[List[Float64]]()
+        self.main = List[String]()
+        var raw = List[List[Float64]]()
+        for ref line in commit_examples():
+            var parts = line.split("|")
+            var m = FileMix.decode(String(parts[2]))
+            if not m:
+                continue
+            raw.append(m.value().features())
+            self.main.append(String(parts[0]))
+        if len(raw) == 0:
+            return
+        var d = len(raw[0])
+        self.mean = List[Float64](length=d, fill=0)
+        for ref v in raw:
+            for j in range(d):
+                self.mean[j] += v[j]
+        for j in range(d):
+            self.mean[j] /= Float64(len(raw))
+        for ref v in raw:
+            var c = List[Float64](length=d, fill=0)
+            for j in range(d):
+                c[j] = v[j] - self.mean[j]
+            _unit(c)
+            self.vecs.append(c^)
+
+    def vote(self, m: FileMix) -> String:
+        """The type the nearest examples vote for, or "" when none has
+        `VOTE_SHARE` of the vote."""
+        if len(self.vecs) == 0:
+            return String()
+        var f = m.features()
+        for j in range(len(f)):
+            f[j] -= self.mean[j]
+        _unit(f)
+        var top_s = List[Float64]()
+        var top_i = List[Int]()
+        for i in range(len(self.vecs)):
+            var s = Float64(0)
+            for j in range(len(f)):
+                s += f[j] * self.vecs[i][j]
+            var at = len(top_s)
+            while at > 0 and top_s[at - 1] < s:
+                at -= 1
+            if at < VOTERS:
+                top_s.insert(at, s)
+                top_i.insert(at, i)
+                if len(top_s) > VOTERS:
+                    _ = top_s.pop()
+                    _ = top_i.pop()
+        var votes = Dict[String, Float64]()
+        var total = Float64(0)
+        for k in range(len(top_s)):
+            var w = max(top_s[k], 0.0) + 1e-6
+            total += w
+            ref t = self.main[top_i[k]]
+            votes[t] = votes.get(t, 0.0) + w
+        var best = String()
+        var best_w = Float64(0)
+        for e in votes.items():
+            if e.value > best_w:
+                best_w = e.value
+                best = e.key
+        return best if total > 0 and best_w / total >= VOTE_SHARE else String()
+
+
+def _secondary(main: String, m: FileMix) -> List[String]:
+    var out = List[String]()
+    var t = m.test_share()
+    if main != "test" and t >= SECONDARY_SHARE and t < 0.95:
+        out.append("test")
+    var d = m.share(3)  # filemix.KIND_DOCS
+    if main != "docs" and d >= SECONDARY_SHARE and d < 0.95:
+        out.append("docs")
+    return out^
+
+
+def typed_commits(pts: List[Point], ms: List[Migration]) -> List[Typed]:
+    """Each commit of `pts`: its main type by the rules (`commit_type`, a
+    commit with a Mojo version change in `ms` counting as one), else by the
+    vote over its files, and its secondary types."""
     var changed = Dict[String, Bool]()
     for ref m in ms:
         if m.kind == "mojo_version":
             changed[m.sha] = True
-    var out = List[String]()
+    var voters = _Voters()
+    var out = List[Typed]()
     for ref p in pts:
-        out.append(
-            commit_type(p.subject, p.sha in changed) if p.subject.byte_length() > 0
-            else String()
-        )
+        if p.subject.byte_length() == 0:
+            out.append(Typed(String(), List[String](), String()))
+            continue
+        var main = commit_type(p.subject, p.sha in changed)
+        var by = String("rules")
+        var mix = FileMix.decode(p.changes)
+        if not mix:
+            out.append(Typed(main^, List[String](), by^))
+            continue
+        if main == "other":
+            var v = voters.vote(mix.value())
+            if v.byte_length() > 0:
+                main = v^
+                by = "files"
+        var sec = _secondary(main, mix.value())
+        out.append(Typed(main^, sec^, by^))
     return out^
-

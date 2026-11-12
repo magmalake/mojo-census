@@ -7,7 +7,7 @@ from days import day_text
 from model import Library, MonthActivity, Point, day
 from similar import Neighbor
 from categories import CATEGORIES_VERSION, VOTERS, category_title
-from committype import commit_type_keys, commit_type_title, commit_types, has_subjects
+from committype import commit_type_keys, commit_type_title, has_subjects, typed_commits
 from overview import tool_code, unversioned
 from versions import source_label, usable
 
@@ -356,7 +356,10 @@ def repo_page(req: Request, c: Cache) raises -> Response:
         if len(pts) == 0:
             h.write(_empty("No commits read yet", "The history pipeline hasn't reached this repository."))
         else:
-            var types = commit_types(pts, data.ms)
+            var typed = typed_commits(pts, data.ms)
+            var types = List[String]()
+            for ref t in typed:
+                types.append(t.main)
             var subjects = has_subjects(pts)
             if subjects:
                 h.write(_types_line(types))
@@ -377,9 +380,12 @@ def repo_page(req: Request, c: Cache) raises -> Response:
                 )
                 if subjects:
                     h.write(
-                        "<td>", commit_type_title(types[i]), "</td><td>",
-                        html_escape(p.subject), "</td>",
+                        "<td", " title='From its files: the nearest hand-labelled commits&#39; type'"
+                        if typed[i].by == "files" else "", ">", commit_type_title(types[i]),
                     )
+                    for ref s in typed[i].secondary:
+                        h.write(" <span class=mute>+", commit_type_title(s).lower(), "</span>")
+                    h.write("</td><td>", html_escape(p.subject), "</td>")
                 h.write(
                     "<td class=num>", _n(p.lines), "</td><td>", _or_dash(p.tooling),
                     "</td><td class=mono>", _or_dash(p.version), "</td></tr>",
@@ -407,7 +413,9 @@ def _types_line(types: List[String]) -> String:
         return String()
     var out = String(
         "<p class=sub><span title='From each commit&#39;s subject, by rules: a conventional",
-        " prefix (fix:, feat:), a Mojo version change, else its first word. Approximate.'>",
+        " prefix (fix:, feat:), a Mojo version change, else its first word; when those say",
+        " nothing, from the kinds of files it changed, like the nearest hand-labelled commits.",
+        " A +test or +docs after a type: that part of the commit too. Approximate.'>",
         "Commit types</span>: ",
     )
     var first = True

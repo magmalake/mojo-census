@@ -51,6 +51,16 @@ def test_lines_and_files() raises:
     assert_equal(len(h.migrations), 0)
 
 
+def test_file_mix() raises:
+    var h = History.empty("o/r")
+    _parse_log("o/r", "/nonexistent", _log(), h)
+    # Mojo 15 lines, docs 3; 3 files, 3 new, 18 added, 0 deleted.
+    assert_equal(h.commits.items[0].changes, "1 15 0 0 3 0 0 0 0 0 3 3 18 0")
+    # A binary file counts as a file of 0 lines.
+    assert_equal(h.commits.items[1].changes, "1 12 0 0 0 0 0 0 0 0 3 2 11 1")
+    assert_equal(h.commits.items[2].changes, "1 5 0 0 0 0 0 0 0 0 1 0 0 5")
+
+
 def test_bazel_outranks_pixi() raises:
     # pixi.toml first, then a root MODULE.bazel (bazel, though pixi is still
     # there), a nested WORKSPACE that doesn't count, then Bazel's files go.

@@ -1,0 +1,1 @@
+- **Commit types from the files a commit changes**: a commit the subject rules call other is typed like its nearest hand-labelled commits by the kinds of files it changed, and a commit can show secondary types (`Fix +test`); mojo.commits gains `changes`.
