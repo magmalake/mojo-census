@@ -129,6 +129,12 @@ jobs:
       # checked by magmalake/encoder.mojo's own CI on the same runner type.
       - name: mojo_embed loads inside the image
         run: docker run --rm --entrypoint mojo_embed gharchive-image describe
+      # The commit is the image's environment, not a -D define (#153): a
+      # pipeline's describe, which `morca register` records, still has it.
+      - name: describe reports the commit
+        run: |
+          docker run --rm --entrypoint gharchive gharchive-image describe | tee describe.json
+          grep -q '"commit": "${{ github.sha }}"' describe.json
       - name: The console starts and answers
         run: |
           docker run -d --name console -p 8080:8080 -e PORT=8080 \
