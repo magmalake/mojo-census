@@ -12,6 +12,10 @@ mojo.live_heads is rewritten with the heads. A repository seen for the
 first time records its head only. A run for an hour that is over (a
 backfill) polls once.
 
+When a newer census is deployed (`morca.outdated`), the run stops between
+polls and succeeds with what it recorded; the new code polls from the next
+hour, and nothing is lost, as the heads are stored.
+
 A poll that fails is logged and the next one tries again; the step has no
 retries, as a retry would skip the commits its first attempt made
 (`morca.tables.find_commit`) and lose those polls' rows.
@@ -24,7 +28,19 @@ from std.time import sleep
 
 from iceberg.batch import ColumnBuilder, batch_of
 from iceberg.values import Datum
-from morca import Cron, Ctx, Current, Hour, Hourly, Mapped, Pipeline, Step, morca_main
+from morca import (
+    Cron,
+    Ctx,
+    Current,
+    Hour,
+    Hourly,
+    Mapped,
+    Pipeline,
+    Step,
+    morca_main,
+    outdated,
+    outdated_why,
+)
 from morca.civil import now
 from morca.tables import append, ensure_table, scan, table
 from parquet import RecordBatch
@@ -222,9 +238,16 @@ def live(mut ctx: Ctx, h: Hour) raises -> Int:
         var next = started + every
         if next >= end:
             break
-        var wait = next - now()
-        if wait > 0:
-            sleep(Float64(wait))
+        # A deploy of a newer census: stop between polls and let the new
+        # code poll the rest (morca.outdated, #406).
+        if outdated():
+            ctx.log(String("outdated (", outdated_why(), "): stopping after poll ", polls))
+            break
+        while now() < next and not outdated():
+            sleep(Float64(min(Int64(5), next - now())))
+        if outdated():
+            ctx.log(String("outdated (", outdated_why(), "): stopping after poll ", polls))
+            break
     ctx.log(String(String(h), ": ", polls, " polls (", failed, " failed), ", total, " commits"))
     if failed == polls:
         raise Error("every poll failed")
