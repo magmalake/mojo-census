@@ -21,8 +21,8 @@ from parquet.arrow import ArrayData
 from cols import col
 
 
-comptime _Bytes = UnsafePointer[UInt8, ImmUntrackedOrigin]
-comptime _Offsets = UnsafePointer[Int32, ImmUntrackedOrigin]
+comptime _Bytes = Pointer[UInt8, ImmUntrackedOrigin]
+comptime _Offsets = Pointer[Int32, ImmUntrackedOrigin]
 
 
 @always_inline

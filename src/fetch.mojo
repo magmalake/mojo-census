@@ -383,7 +383,7 @@ def _pull(arg: OpaquePtr) -> OpaquePtr:
             _cell(sh[].have).store(Int64(sh[].size))
         else:
             var at = 0
-            var dst = UnsafePointer[UInt8, MutAnyOrigin](
+            var dst = Pointer[UInt8, MutAnyOrigin](
                 unsafe_from_address=sh[].region
             )
             while True:
@@ -483,7 +483,7 @@ struct Download(GzInput, Movable):
         hold it while this struct moves."""
         return Pointer[_Shared, MutUntrackedOrigin](unsafe_from_address=self.addr)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Ask the reader to stop between chunks, wait for it, then free.
         var st = _cell(
             Pointer[_Shared, MutUntrackedOrigin](
