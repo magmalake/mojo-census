@@ -62,11 +62,10 @@ ARG MORCA_SOURCE=""
 ARG MORCA_COMMIT=""
 ARG MOJO_TARGET_CPU=neoverse-n1
 ARG MOJO_BUILD_JOBS=""
-ENV MODULAR_CACHE_DIR=/mojo-cache MODULAR_ENABLE_CACHE_LOGGING=1
+ENV MODULAR_CACHE_DIR=/mojo-cache
 COPY . .
 # MORCA_SOURCE and MORCA_COMMIT reach every program now, which only a
 # pipeline's describe reads.
-RUN (cd .pixi/envs/default/lib/mojo && find . -type f | sort | xargs md5sum) | sed 's/^/pkg-md5 /'
 RUN --mount=type=cache,id=mojo-cache,target=/mojo-cache mkdir -p /out/bin /out/pipelines \
     && pixi run sh -c 'sh scripts/build.sh /out/bin /out/pipelines -g1 -strip-file-prefix=/src/project/ --target-cpu "$MOJO_TARGET_CPU" \
             -D MORCA_SOURCE='"${MORCA_SOURCE}"' -D MORCA_COMMIT='"${MORCA_COMMIT}"' || exit 1; \
