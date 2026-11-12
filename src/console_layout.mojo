@@ -196,7 +196,7 @@ def _nav(href: String, label: String, current: Bool) -> String:
 comptime BRAND = "Mojourney"
 comptime SUBTITLE = "the Mojo ecosystem census"
 comptime SITE_URL = "https://mojourney.dev"
-comptime FEEDBACK = "https://github.com/magmalake/mojo-census/issues"
+comptime FEEDBACK = "https://github.com/morca-dev/census/issues"
 """Where the footer's Feedback link goes."""
 
 
@@ -275,7 +275,7 @@ def _page(
         " say at each commit.</p>",
         "<nav><a href='https://mlake.dev' rel=noopener>mlake.dev</a>",
         "<a href='", FEEDBACK, "' rel=noopener>Feedback</a>",
-        "<a href='https://github.com/magmalake' rel=noopener>GitHub</a>",
+        "<a href='https://github.com/morca-dev' rel=noopener>GitHub</a>",
         "<a href='/api/repos'>JSON</a>", _version_link(), "</nav></div></footer>", HELP_JS, "</body></html>",
     )
     var resp = Response(status=200, reason="OK", body=List[UInt8](h.as_bytes()))

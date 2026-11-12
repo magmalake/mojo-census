@@ -1,4 +1,4 @@
-# The dev stack's orca.toml (magmalake/orca.mojo docs/hetzner.md, "A dev
+# The dev stack's orca.toml (morca-dev/morca docs/hetzner.md, "A dev
 # stack"). The image has it at /opt/orca/orca.dev.toml beside orca.toml; the
 # dev stack's EXTRA_ENV_FILE sets ORCA_CONFIG=/opt/orca/orca.dev.toml, so
 # `orca register` (no arguments) in its scheduler reads this file instead.

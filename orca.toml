@@ -2,7 +2,7 @@
 # the scheduler container reads this file: the image has it at
 # /opt/orca/orca.toml (ORCA_CONFIG) and the binaries at /opt/orca/pipelines.
 # To change a setting: edit this file, merge, deploy the new image, register
-# again. magmalake/orca.mojo docs/orca-toml.md and docs/hetzner.md say more.
+# again. morca-dev/morca docs/orca-toml.md and docs/hetzner.md say more.
 
 [defaults]
 # One run of a pipeline at a time. Concurrent commits to one table are safe

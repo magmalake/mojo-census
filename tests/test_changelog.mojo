@@ -7,7 +7,7 @@ from std.testing import TestSuite, assert_equal, assert_true, assert_false
 
 from changelog import changelog_html
 
-comptime PULLS = "https://github.com/magmalake/mojo-census/pull"
+comptime PULLS = "https://github.com/morca-dev/census/pull"
 
 
 def test_sections_and_bullets() raises:
