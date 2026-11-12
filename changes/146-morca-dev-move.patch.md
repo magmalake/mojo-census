@@ -1,1 +1,0 @@
-- **New names**: the image is now ghcr.io/morca-dev/census; the repo moved to morca-dev/census, and orca and dista to morca-dev/morca and morca-dev/dista. (#146)
