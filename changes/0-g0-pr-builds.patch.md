@@ -1,0 +1,1 @@
+- **Pull request images build without line tables** (`-g0`), about 15% faster with 30% less peak memory; images pushed from dev, lab and tags keep `-g1`.
