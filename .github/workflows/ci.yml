@@ -42,18 +42,16 @@ jobs:
   # Build the image `morca aws push` builds, then run one hour of GH Archive
   # through the gharchive pipeline inside it: the Linux-only failures (a
   # library that won't link, a CA bundle in the wrong place) show up here
-  # rather than on AWS. Not on main: what was merged there is built when it
-  # reaches dev, the branch both stacks deploy from (pull requests still
-  # build it, without pushing).
+  # rather than on AWS. On main it is built and tested but not pushed: what
+  # was merged there is pushed when it reaches dev, the branch both stacks
+  # deploy from. main's build is what fills the compile cache pull requests
+  # start from (below); pull requests build and test, without pushing.
   #
   # One per architecture, each on its own runner (no emulation), built for a
   # baseline CPU (Dockerfile.morca, MOJO_TARGET_CPU) and pushed as
-  # <tag>-<arch>; `manifest` joins them under the tags deploys use. A pull
-  # request's image is built without line tables (MOJO_DEBUG=-g0, #153), as
-  # it is never deployed; pushed ones keep them.
+  # <tag>-<arch>; `manifest` joins them under the tags deploys use.
   image-arch:
     name: image (${{ matrix.arch }}, ${{ matrix.runner }}, ${{ matrix.cpu }})
-    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
@@ -79,6 +77,26 @@ jobs:
       # (about 3 minutes); the compile runs on every commit anyway.
       # load puts the image in the runner's docker, for the steps below.
       - uses: docker/setup-buildx-action@v3
+      # Mojo's compile cache (#153): only Dockerfile.morca's `mojo-cache`
+      # mount, about 0.5 to 1 GB an architecture, not a layer cache. Saved per
+      # commit, restored from the newest of this branch's, else main's (a
+      # pull request can read its base branch's caches). The key has what
+      # changes every compile: architecture, target CPU and -g level.
+      - name: Mojo compile cache
+        id: mojo-cache
+        uses: actions/cache@v4
+        with:
+          # Outside the checkout, which is the image's build context.
+          path: ${{ runner.temp }}/mojo-cache
+          key: mojo-cache-${{ matrix.arch }}-${{ matrix.cpu }}-g1-${{ github.sha }}
+          restore-keys: |
+            mojo-cache-${{ matrix.arch }}-${{ matrix.cpu }}-g1-
+      - name: The compile cache into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          cache-map: |
+            {"${{ runner.temp }}/mojo-cache": {"target": "/mojo-cache", "id": "mojo-cache"}}
+          skip-extraction: ${{ steps.mojo-cache.outputs.cache-hit }}
       - name: Build the image
         uses: docker/build-push-action@v6
         with:
@@ -91,7 +109,6 @@ jobs:
             MORCA_COMMIT=${{ github.sha }}
             CENSUS_VERSION=${{ github.ref_type == 'tag' && github.ref_name || '' }}
             MOJO_TARGET_CPU=${{ matrix.cpu }}
-            MOJO_DEBUG=${{ github.event_name == 'pull_request' && '-g0' || '-g1' }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -129,14 +146,14 @@ jobs:
       # scripts/image-tags.sh.
       # Nothing pushes latest any more: it stays at main's last image.
       - name: Log in to GHCR
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Push to GHCR
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
         run: |
           for t in $(scripts/image-tags.sh); do
             docker tag gharchive-image "$GHCR_IMAGE:$t-${{ matrix.arch }}"
@@ -144,7 +161,7 @@ jobs:
           done
 
   # `test` and `image`, the checks main's ruleset requires: each passes once
-  # every architecture's job has (skipped counts, as on a push to main).
+  # every architecture's job has (skipped counts).
   test:
     if: always()
     needs: test-arch
