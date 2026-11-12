@@ -3,6 +3,10 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.5.1 - 2026-11-12
+
+- **mojo_live hands over to a newer deploy** (morca-mojo 0.26.0): a run that is outdated stops between polls and succeeds, and the new code polls from the next hour. (#166)
+
 ## 1.5.0 - 2026-11-12
 
 - **Commit types from the files a commit changes**: a commit the subject rules call other is typed like its nearest hand-labelled commits by the kinds of files it changed, and a commit can show secondary types (`Fix +test`); mojo.commits gains `changes`. (#161)

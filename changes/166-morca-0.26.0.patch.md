@@ -1,1 +1,0 @@
-- **mojo_live hands over to a newer deploy** (morca-mojo 0.26.0): a run that is outdated stops between polls and succeeds, and the new code polls from the next hour.
