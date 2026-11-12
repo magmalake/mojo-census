@@ -265,7 +265,7 @@ def arrival_order(n: Int) -> List[Int32]:
     return order^
 
 
-comptime _Bytes = UnsafePointer[UInt8, ImmUntrackedOrigin]
+comptime _Bytes = Pointer[UInt8, ImmUntrackedOrigin]
 
 
 @always_inline
@@ -315,8 +315,8 @@ def order_by_repo_type(rows: EventRows) -> List[Int32]:
     def before(x: Int32, y: Int32) {imm rp, imm rs, imm tp, imm tsz} -> Bool:
         var i = Int(x)
         var j = Int(y)
-        var pa = UnsafePointer[Int, ImmUntrackedOrigin](unsafe_from_address=rp)
-        var sa = UnsafePointer[Int, ImmUntrackedOrigin](unsafe_from_address=rs)
+        var pa = Pointer[Int, ImmUntrackedOrigin](unsafe_from_address=rp)
+        var sa = Pointer[Int, ImmUntrackedOrigin](unsafe_from_address=rs)
         var c = _compare(
             _Bytes(unsafe_from_address=pa[unsafe_offset=i]),
             sa[unsafe_offset=i],
@@ -325,8 +325,8 @@ def order_by_repo_type(rows: EventRows) -> List[Int32]:
         )
         if c != 0:
             return c < 0
-        var pb = UnsafePointer[Int, ImmUntrackedOrigin](unsafe_from_address=tp)
-        var sb = UnsafePointer[Int, ImmUntrackedOrigin](unsafe_from_address=tsz)
+        var pb = Pointer[Int, ImmUntrackedOrigin](unsafe_from_address=tp)
+        var sb = Pointer[Int, ImmUntrackedOrigin](unsafe_from_address=tsz)
         c = _compare(
             _Bytes(unsafe_from_address=pb[unsafe_offset=i]),
             sb[unsafe_offset=i],

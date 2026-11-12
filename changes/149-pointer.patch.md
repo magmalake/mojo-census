@@ -1,0 +1,1 @@
+- **Ready for Mojo 1.3**: `Pointer` in place of the deprecated `UnsafePointer`, and `__deinit__` in place of `__del__`. (#149)
