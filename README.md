@@ -4,7 +4,7 @@ The code behind [Mojourney: the Mojo ecosystem census](https://mojourney.dev).
 
 A lake of GitHub activity built on [magmalake](https://magmalake.org), and
 a console that shows how Mojo repos have grown. Everything is Mojo, in
-one pixi project: five [orca](https://github.com/magmalake/orca.mojo)
+one pixi project: five [orca](https://github.com/morca-dev/morca)
 pipelines write Iceberg tables, the project's own `orca` schedules them,
 and a [flare](https://github.com/magmalake/flare_mlake) app reads the
 tables.
@@ -208,7 +208,7 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
 What the magmalake libraries were missing while this was built is tracked as
 GitHub issues in each library's repository (orca.mojo, iceberg.mojo,
 dista.mojo, json_mlake, flare_mlake, deflate.mojo, threads.mojo, and mojoshelf);
-the census's own open work is in [this repository's issues](https://github.com/magmalake/mojo-census/issues).
+the census's own open work is in [this repository's issues](https://github.com/morca-dev/census/issues).
 
 ## Run it locally
 
@@ -406,7 +406,7 @@ register again. `mojo_retool` has no schedule and runs only by hand, but it is i
 
 ### The dev stack
 
-orca.mojo's [dev stack](https://github.com/magmalake/orca.mojo/blob/main/docs/hetzner.md#a-dev-stack)
+orca.mojo's [dev stack](https://github.com/morca-dev/morca/blob/main/docs/hetzner.md#a-dev-stack)
 is a second, smaller server for trying a release or a deploy-script change
 before production. Its scheduler reads `orca.dev.toml` (the image has it at
 `/opt/orca/orca.dev.toml`; the stack sets `ORCA_CONFIG` to it): the same
@@ -414,7 +414,7 @@ pipelines, without fills or the bgent pool, so it never backfills from 2023.
 CI keeps the two files' pipelines the same.
 
 Both stacks' images come from the `dev` branch: a push to `dev` builds and
-pushes `ghcr.io/magmalake/orca:<short sha>` and `:dev`. main builds no image
+pushes `ghcr.io/morca-dev/census:<short sha>` and `:dev`. main builds no image
 (`:latest` stays at main's last one, `c1f9fd7`). To release, bring `dev` up
 to main (`git push origin origin/main:dev`, or a merge of main into `dev` when
 it has commits of its own), deploy the short sha to the dev stack, then the
@@ -430,7 +430,7 @@ scheduler, the UI, Postgres, the site, gharchive's fill, mojo_repos and
 mojo_stats. The worker holds no database credentials and needs only outbound
 HTTPS to the UI and to the bucket, no inbound ports. The census ran it on
 "bgent", an Apple-silicon Mac running Docker: arm64 like the CAX21, so the same
-image. (orca's [docs/workers.md](https://github.com/magmalake/orca.mojo/blob/main/docs/workers.md)
+image. (orca's [docs/workers.md](https://github.com/morca-dev/morca/blob/main/docs/workers.md)
 and the [Workers page](https://mlake.dev/s/orca/docs/workers) cover the
 general case; remote workers need orca 0.14.0.) It did that while gharchive's
 backfill had the CAX21's cores; since 2026-11-09 they run on the server
@@ -460,7 +460,7 @@ see a file bind-mounted from under `~/.config`: the mount shows up as an empty
 directory.
 
 ```sh
-docker run --rm -i --entrypoint sh -v orca-worker-secrets:/s ghcr.io/magmalake/orca:<tag> \
+docker run --rm -i --entrypoint sh -v orca-worker-secrets:/s ghcr.io/morca-dev/census:<tag> \
   -c 'cat > /s/token && chmod 600 /s/token' < worker-token
 ```
 
@@ -473,7 +473,7 @@ docker run -d --name orca-worker --restart always \
   -e ORCA_WAREHOUSE=s3://census-mlake-dev/warehouse -e ORCA_LOGS=s3://census-mlake-dev/logs \
   -e AWS_REGION=nbg1 -e AWS_ENDPOINT_URL_S3=https://nbg1.your-objectstorage.com \
   -e MOJO_HISTORY_WORKDIR=/work/clones -v census-work:/work \
-  ghcr.io/magmalake/orca:<tag> worker --pool bgent --max-runs 3 --remote https://orca.mojourney.dev --token-file /etc/orca/w/token
+  ghcr.io/morca-dev/census:<tag> worker --pool bgent --max-runs 3 --remote https://orca.mojourney.dev --token-file /etc/orca/w/token
 ```
 
 `--max-runs 3` lets the three pipelines run at once; the worker admits runs

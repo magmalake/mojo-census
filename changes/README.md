@@ -41,5 +41,5 @@ sh scripts/changelog.sh 0.2.0   # the fragments, under "## 0.2.0 - <today>" in C
 ```
 
 and, once it's merged, the tag `v0.2.0` on its merge commit. The tag's CI
-pushes `ghcr.io/magmalake/orca:0.2.0` and makes the GitHub release, its notes
+pushes `ghcr.io/morca-dev/census:0.2.0` and makes the GitHub release, its notes
 the version's section of CHANGELOG.md. This README stays.

@@ -14,6 +14,8 @@ from console_layout import _nav, _page
 comptime ORCA_DOCS = "https://mlake.dev/s/orca/docs"
 comptime ORCA_UI = "https://orca.mojourney.dev"
 comptime GH = "https://github.com/magmalake"
+comptime GH_CENSUS = "https://github.com/morca-dev/census"
+comptime GH_ORCA = "https://github.com/morca-dev/morca"
 
 comptime HOW_LEAD = (
     "<div class=prose><p class=lead>Mojourney, the Mojo ecosystem census, is a"
@@ -207,8 +209,8 @@ comptime HOW_PIPELINES = (
     + ORCA_DOCS
     + "/debug' rel=noopener>debugging a failed run</a>; the census's own code"
     " is <a href='"
-    + GH
-    + "/mojo-census' rel=noopener>magmalake/mojo-census</a>, and the <a"
+    + GH_CENSUS
+    + "' rel=noopener>morca-dev/census</a>, and the <a"
     " href='https://mlake.dev/getting-started/' rel=noopener>getting-started"
     " guide</a> builds it from scratch.</p>"
     "<p>How the pipelines got faster, with the measurements, is on the <a"
@@ -267,7 +269,7 @@ def how(req: Request) raises -> Response:
 def changelog(req: Request) raises -> Response:
     """CHANGELOG.md, read on each request from `CENSUS_CHANGELOG` (the image's
     /opt/orca/CHANGELOG.md; CHANGELOG.md in the working directory when unset)."""
-    var url = String(GH, "/mojo-census/blob/main/CHANGELOG.md")
+    var url = String(GH_CENSUS, "/blob/main/CHANGELOG.md")
     var text = String()
     try:
         with open(getenv("CENSUS_CHANGELOG", "CHANGELOG.md"), "r") as f:
@@ -284,17 +286,17 @@ def changelog(req: Request) raises -> Response:
     if text == "":
         h.write("<p>The changelog isn't on this server; it's on ", _link(url, "GitHub"), ".</p>")
     else:
-        h.write(changelog_html(text, String(GH, "/mojo-census/pull")))
+        h.write(changelog_html(text, String(GH_CENSUS, "/pull")))
     h.write("</div>")
     return _page("Changelog", h^, "how")
 
 
 def _census_pr(n: Int) -> String:
-    return _link(String(GH, "/mojo-census/pull/", n), String("#", n))
+    return _link(String(GH_CENSUS, "/pull/", n), String("#", n))
 
 
 def optimizations(req: Request) raises -> Response:
-    var pr_census = String(GH, "/mojo-census/pull/4")
+    var pr_census = String(GH_CENSUS, "/pull/4")
     var pr_parquet = String(GH, "/parquet.mojo/pull/59")
     var pr_ice71 = String(GH, "/iceberg.mojo/pull/71")
     var dash = String("<span class=mute>&ndash;</span>")
@@ -349,7 +351,7 @@ def optimizations(req: Request) raises -> Response:
             " and the download memory-mapped and released as it is decoded.",
             "A busy 2023 hour alone 965 to 525 MB; a day 1,969 MB and 52.9 s with 2 hours in flight,"
             " 1,826 MB and 38.9 s with 4 (Linux, 4 vCPU, 8 GB)",
-            String(_census_pr(44), " (", _link(String(GH, "/mojo-census/issues/37"), "#37"), ")"),
+            String(_census_pr(44), " (", _link(String(GH_CENSUS, "/issues/37"), "#37"), ")"),
         ),
         _change(
             "4 hours in flight",
@@ -445,7 +447,7 @@ def optimizations(req: Request) raises -> Response:
             "<span class=mute>&ndash;</span>",
             String(
                 _link(String(GH, "/iceberg.mojo/pull/70"), "iceberg #70"), ", ",
-                _link(String(GH, "/orca.mojo/pull/114"), "orca #114"),
+                _link(String(GH_ORCA, "/pull/114"), "orca #114"),
             ),
         ),
         "</tbody></table></div>",
