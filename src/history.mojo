@@ -5,15 +5,17 @@ version at each commit, and the commits where one of those changed.
 default `$TMPDIR/mojo_history`), walks its first-parent history once with
 `git log --numstat --summary`, and reads a manifest or lock file only at the
 commits that touch one. It also reads the clone's tags (`git
-for-each-ref refs/tags`). `read_tags` reads only the tags, from a clone
-without file contents, for a repository whose history mojo.commits already
-has. It needs `git` on the PATH.
+for-each-ref refs/tags`) and its contributors (`contributors.read_authors`).
+`read_tags_and_authors` reads only those two, from a clone without file
+contents, for a repository whose history mojo.commits already has. It needs
+`git` on the PATH.
 """
 
 from std.os import getenv
 
 from dista import Seq
 
+from contributors import AuthorMonth, read_authors
 from filemix import FileMix
 
 from command import STDERR_DROP, STDERR_MERGE, TIMED_OUT, git, make_dirs, remove_tree
@@ -123,12 +125,15 @@ struct History(Copyable, Movable):
     var commits: Seq[CommitRow]
     var migrations: Seq[MigrationRow]
     var tags: Seq[TagRow]
+    var authors: Seq[AuthorMonth]
+    """Its contributors by month (`contributors.read_authors`)."""
 
     @staticmethod
     def empty(repo: String) -> Self:
         """A history with no rows and no error."""
         return Self(
-            repo, String(), Seq[CommitRow](), Seq[MigrationRow](), Seq[TagRow]()
+            repo, String(), Seq[CommitRow](), Seq[MigrationRow](), Seq[TagRow](),
+            Seq[AuthorMonth](),
         )
 
 
@@ -634,9 +639,15 @@ def read_history(repo: String) raises -> History:
     return out^
 
 
-def read_tags(repo: String) raises -> History:
-    """Reads only one repository's git tags on a worker, from a clone without
-    file contents.
+def _add_authors(repo: String, dir: String, mut out: History) raises:
+    """Appends the clone's contributors by month to `out.authors`."""
+    for ref a in read_authors(repo, dir):
+        out.authors.append(a.copy())
+
+
+def read_tags_and_authors(repo: String) raises -> History:
+    """Reads only one repository's git tags and contributors on a worker,
+    from a clone without file contents.
     No commits: a bare clone with `--filter=blob:none`; errors come back in
     `error`."""
     var out = History.empty(repo)
@@ -650,9 +661,10 @@ def read_tags(repo: String) raises -> History:
             out.error = String("git clone failed: ", clone[1].strip())
         else:
             _read_tags(repo, dir, out)
+            _add_authors(repo, dir, out)
     except e:
         out = History.empty(repo)
-        out.error = String("reading its tags: ", e)
+        out.error = String("reading its tags and authors: ", e)
     try:
         remove_tree(dir)
     except:
@@ -701,6 +713,10 @@ def _read_history(repo: String, mut out: History) raises:
                 _read_tags(repo, dir, out)
             except:
                 pass  # the history stands without its tags
+            try:
+                _add_authors(repo, dir, out)
+            except:
+                pass  # and without its contributors
         except e:
             out.error = String("reading its git log: ", e)
     remove_tree(dir)
