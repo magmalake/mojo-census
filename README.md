@@ -132,7 +132,11 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   (`deps.resolve`: GitHub URL, then a published package name, then a unique
   repository name) and shows "Depends on" (Mojo libraries, of the declared
   total) and "Used by" on each repo page, a Used by column in the Repos
-  table and "Most depended on" on the Overview. To fill them for the
+  table and "Most depended on" on the Overview. "Used by" counts a
+  repository that depends on a fork of the library (`mojo.dep_forks`, from
+  mojo_stats) as one of its dependents, and the repo page and
+  `/api/repos/...` give those (`used_by_forks`) and the second degree, the
+  repositories that depend on it through its dependents (`second_degree`). To fill them for the
   repositories read before (new ones get them from their first run), after
   deploying the image: `docker exec scheduler morca register` (the step now
   reads and writes `mojo.repo_deps`), then `docker exec scheduler morca
@@ -159,7 +163,9 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   month of `as_of`, so stars become a time series. A repository that is
   gone, blocked or renamed is a row with that `state`; a rate limit is
   waited out by `Retry-After` / `X-RateLimit-Reset`. A rerun of a day
-  replaces that day's rows.
+  replaces that day's rows. Then it asks once about each GitHub repository
+  that `mojo.repo_deps` names and `mojo.repos` doesn't have, and keeps
+  whether it is a fork, its `parent` and its `source` in `mojo.dep_forks`.
 - **`pipelines/mojo_embed.mojo`**: daily at 07:00 UTC (daily partitions
   from 2026-11-10), a sentence embedding of each repository's name,
   description and topics into `mojo.repo_embeddings` (384 float32 values,

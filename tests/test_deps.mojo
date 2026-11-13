@@ -9,6 +9,7 @@ from deps import (
     DEPENDS,
     PROVIDES,
     Dep,
+    ForkOf,
     RepoDep,
     declared_count,
     decode_deps,
@@ -21,6 +22,7 @@ from deps import (
     norm_name,
     owner_of,
     resolve,
+    second_degree,
 )
 
 
@@ -340,6 +342,89 @@ def test_resolve() raises:
     assert_true("modular/modular" not in g.used_by)
     assert_true("thatstoasty/floki" not in g.used_by)
     assert_equal(len(g.declared["thatstoasty/floki"]), 9)
+
+
+def _git(repo: String, url_repo: String) -> RepoDep:
+    """`repo` depending on the GitHub repository `url_repo` by URL."""
+    return RepoDep(repo, 0, Dep(DEPENDS, "git", String(url_repo.split("/")[1]), url_repo, "dependencies", "pixi.toml"))
+
+
+def test_fork_roll_up() raises:
+    var repos: List[String] = ["up/lib", "a/app", "b/app", "c/app", "d/app"]
+    var rows = List[RepoDep]()
+    # a/app uses the library itself; b/app a direct fork of it; c/app a
+    # fork of that fork (its source is up/lib, its parent isn't a census
+    # repo); d/app both the library and a fork, which makes it direct.
+    rows.append(_git("a/app", "up/lib"))
+    rows.append(_git("b/app", "B/lib"))
+    rows.append(_git("c/app", "c/lib"))
+    rows.append(_git("d/app", "up/lib"))
+    rows.append(_git("d/app", "b/lib"))
+    # A fork of a repository outside the census, and a fork of the census
+    # repo that depends on it, roll up to nothing.
+    rows.append(_git("a/app", "x/other"))
+    rows.append(_git("up/lib", "e/fork-of-up"))
+    var forks = Dict[String, ForkOf]()
+    forks["b/lib"] = ForkOf("up/lib", "up/lib")
+    forks["c/lib"] = ForkOf("b/lib", "UP/lib")
+    forks["x/other"] = ForkOf("y/other", "y/other")
+    forks["e/fork-of-up"] = ForkOf("up/lib", "up/lib")
+    var g = resolve(repos, rows, forks)
+    ref users = g.used_by["up/lib"]
+    assert_equal(len(users), 4)
+    assert_equal(users[0], "a/app")
+    assert_equal(users[3], "d/app")
+    ref via = g.via_forks["up/lib"]
+    assert_equal(len(via), 2)
+    assert_equal(via[0], "b/app")
+    assert_equal(via[1], "c/app")
+    assert_equal(len(g.depends_on["c/app"]), 1)
+    assert_equal(g.depends_on["c/app"][0], "up/lib")
+    assert_true("up/lib" not in g.depends_on)
+    assert_equal(len(g.depends_on["a/app"]), 1)
+    # Without the forks, only the direct ones.
+    var plain = resolve(repos, rows)
+    assert_equal(len(plain.used_by["up/lib"]), 2)
+    assert_true("up/lib" not in plain.via_forks)
+
+
+def test_second_degree() raises:
+    var repos: List[String] = ["x/core", "a/mid", "b/mid", "c/top", "d/top", "e/both", "f/far"]
+    var rows = List[RepoDep]()
+    rows.append(_git("a/mid", "x/core"))
+    rows.append(_git("b/mid", "x/core"))
+    # c/top is reachable two ways (through a/mid and b/mid): counted once.
+    rows.append(_git("c/top", "a/mid"))
+    rows.append(_git("c/top", "b/mid"))
+    rows.append(_git("d/top", "b/mid"))
+    # e/both depends on x/core directly too: not second degree.
+    rows.append(_git("e/both", "x/core"))
+    rows.append(_git("e/both", "a/mid"))
+    # f/far is third degree: left out.
+    rows.append(_git("f/far", "c/top"))
+    # A cycle: x/core depends on c/top, which depends on it through a/mid.
+    rows.append(_git("x/core", "c/top"))
+    var g = resolve(repos, rows)
+    ref s = g.second["x/core"]
+    assert_equal(len(s), 2)
+    assert_equal(s[0], "c/top")
+    assert_equal(s[1], "d/top")
+    assert_equal(len(g.used_by["x/core"]), 3)
+    # c/top's dependents are f/far and x/core; through x/core come a/mid,
+    # b/mid and e/both, and through f/far nothing. c/top itself isn't its
+    # own second degree, though x/core leads back to it.
+    ref sc = g.second["c/top"]
+    assert_equal(len(sc), 3)
+    assert_equal(sc[0], "a/mid")
+    assert_equal(sc[1], "b/mid")
+    assert_equal(sc[2], "e/both")
+    # Nobody depends on f/far.
+    assert_true("f/far" not in g.second)
+    # A two-repo cycle: each other's direct dependent, no second degree.
+    var used = Dict[String, List[String]]()
+    used["p/one"] = ["p/two"]
+    used["p/two"] = ["p/one"]
+    assert_equal(len(second_degree("p/one", used)), 0)
 
 
 def test_most_depended() raises:

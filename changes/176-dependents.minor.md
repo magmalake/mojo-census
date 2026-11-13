@@ -1,0 +1,1 @@
+- **Dependents through forks and second degree**: "Used by" counts projects that depend on a fork of a library (mojo_stats records forks in the new mojo.dep_forks), and the repo page and API show the second degree. (#176)

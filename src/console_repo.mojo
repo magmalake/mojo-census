@@ -101,6 +101,18 @@ def _deps_stat(l: Library) -> String:
     )
 
 
+def _used_by_stat(l: Library) -> String:
+    """The "Used by" tile, which counts the dependents through a fork of it
+    too, and beside it the second degree, when it has dependents."""
+    var note = String("census repos that depend on it")
+    if len(l.used_by_forks) > 0:
+        note.write(" (", len(l.used_by_forks), " through forks)")
+    var h = _stat("Used by", _n(Int64(len(l.used_by))), note)
+    if len(l.used_by) > 0:
+        h += _stat("Second degree", _n(Int64(len(l.second_degree))), "more that depend on those")
+    return h^
+
+
 def _repo_links(repos: List[String]) -> String:
     """Repos as links to their pages, comma-separated."""
     var h = String()
@@ -120,6 +132,10 @@ def _deps_section(l: Library) -> String:
         h.write("<p>Depends on ", _repo_links(l.depends_on), ".</p>")
     if len(l.used_by) > 0:
         h.write("<p>Used by ", _repo_links(l.used_by), ".</p>")
+    if len(l.used_by_forks) > 0:
+        h.write("<p>Through a fork of it: ", _repo_links(l.used_by_forks), ".</p>")
+    if len(l.second_degree) > 0:
+        h.write("<p>Through those (second degree): ", _repo_links(l.second_degree), ".</p>")
     if len(l.declared) > 0:
         h.write("<p class=mute>Declared in its manifests at HEAD (toolchain left out): ")
         for i in range(len(l.declared)):
@@ -283,7 +299,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
             _stat("Stars", _n(l.stars), String("as of ", day_text(l.stats_as_of)) if l.stats_as_of > 0 else String("when found")),
             _stat("Forks", _n(l.forks), String("as of ", day_text(l.stats_as_of)) if l.stats_as_of > 0 else String("when found")),
             _deps_stat(l),
-            _stat("Used by", _n(Int64(len(l.used_by))), "census repos that depend on it"),
+            _used_by_stat(l),
             _stat("Open issues", _n(l.open_issues)) if l.stats_as_of > 0 else String(),
             _stat("Watchers", _n(l.watchers)) if l.stats_as_of > 0 else String(),
             _stat("Created", day(l.created_at), String(_age(l.created_at, today), " ago") if l.created_at else String()),

@@ -284,6 +284,33 @@ def parse_repo(body: String) -> RepoInfo:
 
 
 @fieldwise_init
+struct ForkInfo(Copyable, Movable):
+    """Whether a repository is a fork, and of what, from a `GET
+    /repos/{owner}/{repo}` reply."""
+
+    var repo: String
+    """GitHub's `full_name`."""
+    var fork: Bool
+    var parent: String
+    """The repository it was forked from (`parent.full_name`), or ""."""
+    var source: String
+    """The root of its fork network (`source.full_name`): the same as
+    `parent` for a fork of a repository that isn't one."""
+
+
+def parse_fork(body: String) -> ForkInfo:
+    """The fork fields of a `GET /repos/{owner}/{repo}` reply."""
+    var b = body.as_bytes()
+    var all = Range(0, len(b))
+    return ForkInfo(
+        text(b, field(b, all, "full_name")),
+        text(b, field(b, all, "fork")) == "true",
+        text(b, field(b, field(b, all, "parent"), "full_name")),
+        text(b, field(b, field(b, all, "source"), "full_name")),
+    )
+
+
+@fieldwise_init
 struct Verdict(Copyable, Movable):
     var outcome: String
     """`mojo`, `not mojo`, `fork`, `gone`, or `limited` (try again later)."""

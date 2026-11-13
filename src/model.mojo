@@ -1,14 +1,15 @@
 """What the console shows, read from the lake: one `Library` per repository
 of mojo.repos (a repository in it twice is one), with what mojo.commits and mojo.migrations say about it, and its
 latest row of mojo.repo_stats, and its dependencies (mojo.repo_deps,
-resolved to the census's repositories here); and per repository its
+resolved to the census's repositories here, a fork named as a dependency
+to its source by mojo.dep_forks); and per repository its
 activity by month (mojo.activity), releases (mojo.releases) and tags
 (mojo.tags)."""
 
 from iceberg.catalog.filesystem import Table
 
 from cols import bool_at, col, has_col, i32_at, i64_at, is_valid, str_at, strs_at
-from deps import RepoDep, resolve
+from deps import ForkOf, RepoDep, resolve
 from historyrows import repo_dep_rows
 from days import day_text
 from jscan import micros_to_iso
@@ -82,7 +83,13 @@ struct Library(Copyable, Movable):
     """The census repositories among them (`deps.resolve`): the Mojo
     libraries it depends on."""
     var used_by: List[String]
-    """The census repositories that depend on it."""
+    """The census repositories that depend on it, directly or through a
+    fork of it."""
+    var used_by_forks: List[String]
+    """Of `used_by`, the ones that depend on it only through a fork."""
+    var second_degree: List[String]
+    """The census repositories that depend on it through one of `used_by`
+    and not directly, each once."""
     var packaging: String
     """How it packages itself for conda at its last commit (`rattler`,
     `conda-build`, `none`); empty when its history was read before
@@ -185,7 +192,7 @@ def libraries(mut ob: Builder) raises -> List[Library]:
                 strs_at(b, c_topics, r) if c_topics >= 0 else List[String](),
                 0, 0, 0, False, String(), String(),
                 String(), String(), String(),
-                -1, List[String](), List[String](), List[String](), String(),
+                -1, List[String](), List[String](), List[String](), List[String](), List[String](), String(),
             )
             if at >= 0:
                 out[at] = lib^
@@ -308,7 +315,7 @@ def _dependencies(mut libs: List[Library]) raises:
     var names = List[String]()
     for ref l in libs:
         names.append(l.repo)
-    var g = resolve(names, rows)
+    var g = resolve(names, rows, dep_forks())
     for ref l in libs:
         if l.repo in g.declared:
             l.declared = g.declared[l.repo].copy()
@@ -316,6 +323,38 @@ def _dependencies(mut libs: List[Library]) raises:
             l.depends_on = g.depends_on[l.repo].copy()
         if l.repo in g.used_by:
             l.used_by = g.used_by[l.repo].copy()
+        if l.repo in g.via_forks:
+            l.used_by_forks = g.via_forks[l.repo].copy()
+        if l.repo in g.second:
+            l.second_degree = g.second[l.repo].copy()
+
+
+def dep_forks() raises -> Dict[String, ForkOf]:
+    """The forks among the repositories named as dependencies, by lowercased
+    `owner/name`, from mojo.dep_forks (the newest row of each); empty if the
+    table doesn't exist."""
+    var out = Dict[String, ForkOf]()
+    var at = Dict[String, Int64]()
+    var t = try_load("mojo", "dep_forks")
+    if not t:
+        return out^
+    for b in t.value().scan().to_batches():
+        var c_repo = col(b, "repo")
+        var c_at = col(b, "fetched_at")
+        var c_fork = col(b, "fork")
+        var c_parent = col(b, "parent")
+        var c_source = col(b, "source")
+        for r in range(b.num_rows):
+            var repo = str_at(b.column(c_repo), r).lower()
+            var fetched = i64_at(b.column(c_at), r)
+            if repo in at and at[repo] >= fetched:
+                continue
+            at[repo] = fetched
+            if is_valid(b.column(c_fork), r) and bool_at(b.column(c_fork), r):
+                out[repo] = ForkOf(str_at(b.column(c_parent), r), str_at(b.column(c_source), r))
+            elif repo in out:
+                _ = out.pop(repo)
+    return out^
 
 
 def _latest_stats(mut libs: List[Library], index: Dict[String, Int]) raises:

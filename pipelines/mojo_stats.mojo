@@ -1,5 +1,6 @@
 """Fetches every Mojo repository's stars, forks, open issues and other GitHub
-numbers each day into mojo.repo_stats.
+numbers each day into mojo.repo_stats, and records which of the other
+repositories they depend on are forks, and of what, in mojo.dep_forks.
 
 Daily partitions from 2026-11-08, the first day it ran, each filled at
 06:00 UTC for that day (`fills=Current`); GitHub only gives the current
@@ -11,6 +12,14 @@ blocked or renamed is a row with that `state`. A rate limit (403/429) is
 waited out by `Retry-After` or `X-RateLimit-Reset`, for at most
 `MOJO_STATS_MAX_WAIT` seconds (default 3900) in all.
 
+Then it asks, once each, about the GitHub repositories that mojo.repo_deps
+names (`dep_repo`) and mojo.repos doesn't have, and keeps GitHub's `fork`,
+`parent` and `source` for them in mojo.dep_forks, so the console can count
+a project that depends on a fork of a library as one of the library's
+dependents. One whose answer was an error is asked again the next day; a
+rate limit leaves the rest for the next day, without waiting. This part
+never fails the step.
+
 A rerun of a day replaces that day's rows (`replace.replace_files`), so a
 day has one row per repository however often it runs.
 
@@ -19,20 +28,25 @@ day has one row per repository however often it runs.
 
 from std.os import getenv, setenv
 
-from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of_columns
+from iceberg.batch import ColumnBuilder, NestedBuilder, batch_of, batch_of_columns
 from iceberg.nested import ColumnTree
 from iceberg.values import Datum
 from morca import Cron, Ctx, Current, Daily, Day, Mapped, Pipeline, Step, morca_main
 from morca.civil import now
-from morca.tables import ensure_table, scan, table
+from morca.tables import append, ensure_table, scan, table
 from parquet import RecordBatch
 
 from cols import bool_at, col, i32_at, i64_at, str_at, strs_at
 from days import days_of, month_of
+from detect import parse_fork
+from fetch import Reply, github
 from lake import (
+    DEP_FORKS,
     REPOS,
+    REPO_DEPS,
     REPO_STATS,
     date,
+    dep_forks_schema,
     json_strings,
     repo_stats_schema,
     repo_stats_spec,
@@ -41,7 +55,7 @@ from lake import (
     ts_or_null,
 )
 from replace import partition_files, replace_files
-from stats import StatsRow, stats_of
+from stats import StatsRow, limited, state_of, stats_of
 
 
 @fieldwise_init
@@ -168,6 +182,133 @@ def stats_batch(rows: List[_Stored]) raises -> RecordBatch:
     return batch_of_columns(trees^)
 
 
+@fieldwise_init
+struct DepFork(Copyable, Movable):
+    """A row of `mojo.dep_forks`."""
+
+    var repo: String
+    var fetched_at: Int64
+    var state: String
+    var fork: Bool
+    var parent: String
+    var source: String
+
+    def settled(self) -> Bool:
+        """Whether it needn't be asked again: GitHub answered, or said the
+        repository is gone or blocked."""
+        return not self.state.startswith("error")
+
+
+def dep_targets(census: List[String], relations: List[String], dep_repos: List[String]) -> List[String]:
+    """The `dep_repo`s of `depends` rows (`relations[i]`, `dep_repos[i]`
+    of mojo.repo_deps) that aren't `census` repositories, compared without
+    regard to case, each once as first written, in that order."""
+    var seen = Dict[String, Bool]()
+    for r in census:
+        seen[r.lower()] = True
+    var out = List[String]()
+    for i in range(len(dep_repos)):
+        if relations[i] != "depends" or dep_repos[i].byte_length() == 0:
+            continue
+        var low = dep_repos[i].lower()
+        if low in seen:
+            continue
+        seen[low] = True
+        out.append(dep_repos[i])
+    return out^
+
+
+def dep_forks_batch(rows: List[DepFork]) raises -> RecordBatch:
+    """`rows` as a batch of `mojo.dep_forks`."""
+    var s = dep_forks_schema()
+    var cs = List[ColumnBuilder]()
+    for id in range(1, 7):
+        cs.append(ColumnBuilder.of(s, id))
+    for ref r in rows:
+        var ok = r.state == "ok"
+        cs[0].add(Datum.string_(r.repo))
+        cs[1].add(ts(r.fetched_at))
+        cs[2].add(Datum.string_(r.state))
+        cs[3].add(Datum.bool_(r.fork) if ok else Datum.none())
+        cs[4].add(str_or_null(r.parent))
+        cs[5].add(str_or_null(r.source))
+    return batch_of(cs)
+
+
+def _dep_forks(mut ctx: Ctx, repos: List[String], fetched: Int64) raises -> Int:
+    """Asks GitHub about the repositories census repositories depend on that
+    aren't in the census and mojo.dep_forks has no answer for, and rewrites
+    mojo.dep_forks with them (the table is in `replaces=`, unpartitioned, so
+    the `append` replaces it). Returns how many it asked about."""
+    var relations = List[String]()
+    var dep_repos = List[String]()
+    var deps_t = table(ctx, REPO_DEPS)
+    if deps_t.metadata.has_current_snapshot:
+        for b in scan(ctx, deps_t).select(["relation", "dep_repo"]).to_batches():
+            for r in range(b.num_rows):
+                relations.append(str_at(b.column(0), r))
+                dep_repos.append(str_at(b.column(1), r))
+    var targets = dep_targets(repos, relations, dep_repos)
+    var t = ensure_table(ctx, DEP_FORKS, dep_forks_schema())
+    var kept = List[DepFork]()
+    var done = Dict[String, Bool]()
+    if t.metadata.has_current_snapshot:
+        for b in t.scan().to_batches():
+            var c = List[Int]()
+            for name in ["repo", "fetched_at", "state", "fork", "parent", "source"]:
+                c.append(col(b, name))
+            for r in range(b.num_rows):
+                var row = DepFork(
+                    str_at(b.column(c[0]), r), i64_at(b.column(c[1]), r),
+                    str_at(b.column(c[2]), r), bool_at(b.column(c[3]), r),
+                    str_at(b.column(c[4]), r), str_at(b.column(c[5]), r),
+                )
+                if row.settled():
+                    done[row.repo.lower()] = True
+                kept.append(row^)
+    var asked = List[DepFork]()
+    for ref repo in targets:
+        if repo.lower() in done:
+            continue
+        # A network failure ends the asking for today; what was answered
+        # is kept.
+        var reply: Reply
+        try:
+            reply = github(String("/repos/", repo))
+        except e:
+            ctx.log(String("dep_forks: ", repo, ": ", e, "; the rest wait for tomorrow"))
+            break
+        if limited(reply):
+            ctx.log(String("dep_forks: GitHub's rate limit after ", len(asked), "; the rest wait for tomorrow"))
+            break
+        if reply.status != 200:
+            asked.append(DepFork(repo, fetched, state_of(reply.status), False, String(), String()))
+            continue
+        var f = parse_fork(reply.body)
+        asked.append(DepFork(repo, fetched, "ok", f.fork, f.parent, f.source))
+    if len(asked) == 0:
+        return 0
+    # The rows asked again replace their older ones.
+    var again = Dict[String, Bool]()
+    for ref a in asked:
+        again[a.repo.lower()] = True
+    var rows = List[DepFork]()
+    for ref k in kept:
+        if k.repo.lower() not in again:
+            rows.append(k.copy())
+    var forks = 0
+    for ref a in asked:
+        if a.fork:
+            forks += 1
+        rows.append(a.copy())
+    var id = append(ctx, t, [dep_forks_batch(rows)])
+    ctx.log(String(
+        "dep_forks: asked about ", len(asked), " of ", len(targets),
+        " repositories depended on outside the census; ", forks, " forks; snapshot ", id,
+    ))
+    return len(asked)
+
+
 def refresh(mut ctx: Ctx, d: Day) raises -> Int:
     """Asks GitHub for every Mojo repository's current numbers and replaces the
     day's rows in mojo.repo_stats.
@@ -237,6 +378,12 @@ def refresh(mut ctx: Ctx, d: Day) raises -> Int:
         )
     var id = replace_files(ctx, t, files.paths, [stats_batch(rows)])
     ctx.log(String(len(repos), " rows as of ", day, " (", kept, " of other days kept), snapshot ", id))
+    # The forks among the repositories depended on: a failure here is
+    # logged, not raised, so it never costs the day's stats.
+    try:
+        _ = _dep_forks(ctx, repos, fetched)
+    except e:
+        ctx.log(String("dep_forks: ", e))
     return len(repos)
 
 
@@ -250,12 +397,14 @@ comptime Refresh = Step[
     refresh,
     Mapped,
     retries=1,
-    reads=[REPOS],
+    reads=[REPOS, REPO_DEPS],
     # replaces=: a rerun rewrites these rows (replace.replace_files) rather than
     # adding them again, so `morca backfill --rerun` needs no --allow-append.
     # Under replaces=, a morca.tables `append` to them would replace whole
-    # partitions, other keys' rows included: keep writing through replace_files.
-    replaces=[REPO_STATS],
+    # partitions, other keys' rows included: keep writing REPO_STATS through
+    # replace_files. DEP_FORKS is unpartitioned and written whole, so its
+    # `append` replaces the table, as meant.
+    replaces=[REPO_STATS, DEP_FORKS],
 ]
 # A `Cron` schedule fires on its own. `fills=Current` makes a fire fill the
 # partition its time falls in (the day itself, not the day before, which is
