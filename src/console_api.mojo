@@ -7,6 +7,7 @@ from flare.http import Request, Response, internal_error, not_found, ok_json
 from days import day_text
 from jscan import micros_to_iso
 from committype import typed_commits
+from contributors import RepoContributors
 from model import Library, stored_total
 from overview import ARCHIVE_START, RISING_FORK_WEIGHT, RISING_USED_BY_WEIGHT, archive_days_due
 from search import url_decode, version_bucket, version_family
@@ -270,6 +271,17 @@ def _issue_json(r: IssueRow) -> String:
     )
 
 
+def _contributors_json(x: RepoContributors) -> String:
+    """`{"total":n,"months":[{"month":"2026-01","active":n,"new":n}]}`, the
+    months with a commit only, oldest first."""
+    var out = String('{"total":', x.total, ',"months":[')
+    for i in range(len(x.months)):
+        ref m = x.months[i]
+        out.write("," if i > 0 else "", '{"month":', _q(m.month), ',"active":', m.active, ',"new":', m.new, "}")
+    out += "]}"
+    return out^
+
+
 def repo_json(req: Request, c: Cache) raises -> Response:
     try:
         var repo = String(req.param("owner"), "/", req.param("name"))
@@ -349,7 +361,7 @@ def repo_json(req: Request, c: Cache) raises -> Response:
                 out += ","
             first = False
             out.write(_issue_json(r))
-        out += ']},"similar":['
+        out.write(']},"contributors":', _contributors_json(data.contributors), ',"similar":[')
         first = True
         for ref n in c.similar.get(repo, List[Neighbor]()):
             if not first:
