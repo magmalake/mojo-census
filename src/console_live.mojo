@@ -15,6 +15,7 @@ from morca.civil import now
 from cols import col, i64_at, str_at
 from committype import commit_type, commit_type_title
 from console_layout import _empty, _page
+from console_pages import page_json, page_line
 from jscan import micros_to_iso
 from lake import try_load
 from live import Freshness, LiveCommit, freshness
@@ -136,7 +137,7 @@ def live_page(d: LiveData) raises -> Response:
             "No live commits yet",
             "The poller (mojo_live) hasn't recorded any commits yet; it looks at every census repo every 20 minutes.",
         ))
-        return _page("Live", h^, "live")
+        return _page("Live", h^, "live", description=page_line("/live"), alternate=page_json("/live"))
     var day_f = freshness(d.commits, (t - 86_400) * 1_000_000)
     var repos = Dict[String, Bool]()
     for ref c in d.commits:
@@ -154,7 +155,7 @@ def live_page(d: LiveData) raises -> Response:
     )
     if len(d.commits) == 0:
         h.write(_empty("Quiet", "No commits seen in the last two days."))
-        return _page("Live", h^, "live")
+        return _page("Live", h^, "live", description=page_line("/live"), alternate=page_json("/live"))
     h.write(
         "<div class=tbl><table><thead><tr><th>Seen</th><th>Repo</th><th>Type</th>",
         "<th>Subject</th><th>Commit</th><th class=num title='Commit time to seen'>Lag</th></tr></thead><tbody>",
@@ -172,7 +173,7 @@ def live_page(d: LiveData) raises -> Response:
     h.write("</tbody></table></div>")
     if len(d.commits) > LIVE_SHOWN:
         h.write("<p class=mute>The latest ", LIVE_SHOWN, " of ", len(d.commits), " in two days; all of them are in <a href='/api/live'>the JSON</a>.</p>")
-    var resp = _page("Live", h^, "live")
+    var resp = _page("Live", h^, "live", description=page_line("/live"), alternate=page_json("/live"))
     resp.headers.set("Cache-Control", "public, max-age=30")
     return resp^
 

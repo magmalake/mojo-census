@@ -190,7 +190,11 @@ GH Archive ──gharchive──▶ gharchive.events ──mojo_repos──▶ m
   (`/migrations`), and a page per repository (`/repos/<owner>/<name>`:
   current stars, forks and topics from the latest `mojo.repo_stats` row,
   stars per month from `mojo.activity`, releases and tags), each also as
-  JSON under `/api/` (`/api/overview`, `/api/repos`, ...). The repos and
+  JSON under `/api/` (`/api/overview`, `/api/repos`, `/api/repos?q=`, ...),
+  and `/llms.txt`, `/llms-full.txt`, `/sitemap.xml` and `/robots.txt` for
+  crawlers and language models, all written from `src/console_pages.mojo`'s
+  list of pages (`tests/test_console_routes.mojo` checks it against the
+  routes). The repos and
   the overview are computed once and kept in memory; the tables' current
   snapshots are checked every five minutes and everything is read again
   only when one moved.
@@ -515,6 +519,15 @@ cf-cache`: `MISS`, then `HIT`; HEAD requests aren't a reliable test). PostHog ke
 the browser, and the `mojourney-ph` Worker serves `/ph` ahead of the cache.
 Don't add the rule for orca.mojourney.dev: its pages are live and some are
 behind a login.
+
+### robots.txt
+
+mojourney.dev's robots.txt has Cloudflare's managed content signals
+(Security → Settings → "Instruct AI bot traffic with robots.txt"). Cloudflare
+puts them in front of the origin's file, so the console's `/robots.txt`
+(`User-agent: *`, `Allow: /` and the `Sitemap:` line) shows below them; it
+needs no Cloudflare change. Check with `curl -s https://mojourney.dev/robots.txt | tail -3`.
+If the managed setting were off, the console's file is served alone.
 
 ### Analytics
 

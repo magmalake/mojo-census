@@ -32,6 +32,24 @@ def url_decode(s: String) -> String:
     return String(from_utf8_lossy=out)
 
 
+def url_encode(s: String) -> String:
+    """`s` as a query-string value: letters, digits and `-._~` as they are,
+    every other byte as `%XX`."""
+    comptime HEX = "0123456789ABCDEF"
+    var out = String()
+    for c in s.as_bytes():
+        if (
+            (c >= UInt8(ord("a")) and c <= UInt8(ord("z")))
+            or (c >= UInt8(ord("A")) and c <= UInt8(ord("Z")))
+            or (c >= UInt8(ord("0")) and c <= UInt8(ord("9")))
+            or c == UInt8(ord("-")) or c == UInt8(ord(".")) or c == UInt8(ord("_")) or c == UInt8(ord("~"))
+        ):
+            out += chr(Int(c))
+        else:
+            out.write("%", HEX[byte = Int(c >> 4)], HEX[byte = Int(c & 15)])
+    return out^
+
+
 def search_score(
     repo: String,
     description: String,

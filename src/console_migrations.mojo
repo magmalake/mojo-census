@@ -10,6 +10,7 @@ from search import sort_buckets, version_bucket
 
 from console_cache import Cache
 from console_layout import _empty, _help, _page, _this_month
+from console_pages import page_json, page_line
 
 
 def _next_month(m: String) raises -> String:
@@ -225,7 +226,10 @@ def migrations_page(req: Request, c: Cache) raises -> Response:
                     " The lake is still filling.",
                 )
             )
-            return _page("Migrations", h^, "migrations")
-        return _page("Migrations", c.migrations_body.copy(), "migrations")
+            return _page("Migrations", h^, "migrations", description=page_line("/migrations"), alternate=page_json("/migrations"))
+        return _page(
+            "Migrations", c.migrations_body.copy(), "migrations", description=page_line("/migrations"),
+            alternate=page_json("/migrations"),
+        )
     except e:
         return internal_error(String(e))

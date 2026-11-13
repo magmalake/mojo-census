@@ -9,6 +9,7 @@ from changelog import changelog_html
 from howimage import HETZNER_SERVER_WEBP, LINEAGE_DARK_WEBP, LINEAGE_LIGHT_WEBP
 
 from console_layout import _nav, _page
+from console_pages import page_line
 
 
 comptime MORCA_DOCS = "https://mlake.dev/s/orca/docs"
@@ -263,6 +264,7 @@ def how(req: Request) raises -> Response:
             MERMAID_JS,
         ),
         "how",
+        description=page_line("/how"),
     )
 
 
@@ -288,7 +290,7 @@ def changelog(req: Request) raises -> Response:
     else:
         h.write(changelog_html(text, String(GH_CENSUS, "/pull")))
     h.write("</div>")
-    return _page("Changelog", h^, "how")
+    return _page("Changelog", h^, "how", description=page_line("/how/changelog"))
 
 
 def _census_pr(n: Int) -> String:
@@ -452,4 +454,4 @@ def optimizations(req: Request) raises -> Response:
         ),
         "</tbody></table></div>",
     )
-    return _page("Optimizations", h^, "how")
+    return _page("Optimizations", h^, "how", description=page_line("/how/optimizations"))

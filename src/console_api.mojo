@@ -227,7 +227,10 @@ def _lib_json(l: Library, category: String = String()) -> String:
     )
 
 
-def index_json(req: Request, c: Cache) raises -> Response:
+def index_json(req: Request, c: Cache, qv: List[Float32] = List[Float32]()) raises -> Response:
+    """Every repo; with `?q=`, only the ones `/api/search` finds (`search_json`)."""
+    if String(url_decode(req.query_param("q")).strip()).byte_length() > 0:
+        return search_json(req, c, qv)
     var out = String("[")
     var first = True
     for i in range(len(c.libs)):
