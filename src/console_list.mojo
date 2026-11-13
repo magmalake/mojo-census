@@ -18,10 +18,11 @@ from listing import (
 from model import Library, day
 from categories import category_keys, category_title
 from querymodel import Related, related
-from search import search_score, url_decode
+from search import search_score, url_decode, url_encode
 
 from console_cache import Cache
 from console_layout import _age, _chips, _empty, _help, _n, _now_days, _or_dash, _page
+from console_pages import page_json, page_line
 
 
 def _th(label: String, key: String, q: ListQuery, sortable: Bool, num: Bool = True) -> String:
@@ -245,7 +246,7 @@ def repos_page(req: Request, c: Cache) raises -> Response:
                     " so this page fills in as they catch up.",
                 )
             )
-            return _page("Repos", h^, "repos")
+            return _page("Repos", h^, "repos", description=page_line("/repos"), alternate=page_json("/repos"))
         h.write(
             "<p class=lead><strong>", len(idx), " repo" if len(idx) == 1 else " repos",
             "</strong>", " of " if q.has_filter() else "", String(len(c.libs)) if q.has_filter() else "",
@@ -262,7 +263,7 @@ def repos_page(req: Request, c: Cache) raises -> Response:
             h.write(_empty("No repos match", "No repo has all of these filters. Remove one with the chips above."))
         else:
             h.write(_libs_table(c.libs, idx, _now_days(), q, True, c.commits30))
-        return _page("Repos", h^, "repos")
+        return _page("Repos", h^, "repos", description=page_line("/repos"), alternate=page_json("/repos"))
     except e:
         return internal_error(String(e))
 
@@ -339,7 +340,9 @@ def search(req: Request, c: Cache, qv: List[Float32] = List[Float32]()) raises -
                     " processing. Names that match best come first, then repos related by meaning.",
                 )
             )
-            return _page("Search", h^, "search")
+            return _page(
+                "Search", h^, "search", description="Search the Mojo repos by name, GitHub topic, description or meaning."
+            )
         var hits = _matches(q, c)
         h.write(
             "<p class=lead>", len(hits), " ", "repo" if len(hits) == 1 else "repos",
@@ -365,6 +368,10 @@ def search(req: Request, c: Cache, qv: List[Float32] = List[Float32]()) raises -
                 ),
                 "</h2>", _meaning_table(c, rel),
             )
-        return _page(String("Search: ", q), h^, "search", q)
+        return _page(
+            String("Search: ", q), h^, "search", q,
+            description=String("Mojo repos matching \"", q, "\" by name, GitHub topic, description or meaning."),
+            alternate=String("/api/search?q=", url_encode(q)),
+        )
     except e:
         return internal_error(String(e))

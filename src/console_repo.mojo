@@ -396,9 +396,23 @@ def repo_page(req: Request, c: Cache) raises -> Response:
                     "<p class=mute>The latest ", COMMITS_SHOWN, " of ", len(pts),
                     " commits; all of them are in <a href='/api/repos/", html_escape(repo), "'>the JSON</a>.</p>",
                 )
-        return _page(repo, h^, "repos")
+        return _page(repo, h^, "repos", description=repo_line(l), alternate=String("/api/repos/", repo))
     except e:
         return internal_error(String(e))
+
+
+def repo_line(l: Library) -> String:
+    """A repo page's meta description: what GitHub says it is, then its size
+    and Mojo version."""
+    var out = String(l.repo, ": ")
+    var d = String(l.description.strip())
+    if d.byte_length() > 0:
+        out.write(d, "" if d.endswith(".") else ".", " ")
+    out.write(_n(l.mojo_lines), " lines of Mojo in ", _n(l.mojo_files), " files")
+    if usable(l.mojo_version):
+        out.write(", Mojo ", l.mojo_version)
+    out.write(", in the Mojo ecosystem census.")
+    return out^
 
 
 def _types_line(types: List[String]) -> String:

@@ -10,7 +10,9 @@ Pages: `/` the overview (cards, repos per Mojo version, growth curves),
 or description, then by meaning (the query embedded with mojo_embed's model,
 which the console downloads on its first start; CONSOLE_SEMANTIC=0 turns it off), `/migrations` the migrations to each Mojo version over time,
 `/how`, `/how/optimizations` and `/how/changelog` how the census is built,
-`/repos/<owner>/<name>` one repo. The data pages have JSON at `/api/...`.
+`/repos/<owner>/<name>` one repo. The data pages have JSON at `/api/...`;
+`/llms.txt`, `/llms-full.txt`, `/sitemap.xml` and `/robots.txt` are for
+crawlers and language models (`console_ai`). The routes are in `console_routes`.
 
 The repos and the overview are computed and kept (`Cache`), and a background
 thread keeps them fresh: every `CONSOLE_REFRESH_SECONDS` (default 1800) it
@@ -29,39 +31,22 @@ links, on the system font stack (no external fonts or scripts).
 
 from std.memory.alloc import unsafe_alloc
 from std.os import getenv
-from std.memory import ArcPointer
 from std.time import sleep
 
-from flare.http import (
-    Handler,
-    HttpServer,
-    Request,
-    Response,
-    Router,
-    ServerConfig,
-    html_escape,
-    redirect,
-)
+from flare.http import HttpServer, ServerConfig
 from flare.net import SocketAddr
 from morca.civil import now
 from threads import OpaquePtr, ThreadHandle
 
-from checks import CheckRun, RepoFacts, Tops, notice, page_facts, publish, run_checks, when
+from checks import CheckRun, RepoFacts, Tops, page_facts, publish, run_checks, when
 from days import day_text
 from model import Point, read_days, read_sources
-from search import url_decode
 from swap import Swap, check_due, needs_build
 from querymodel import QueryModel, load_model, semantic_on
 
-from console_api import index_json, overview_json, repo_json, search_json, versions_json
 from console_cache import RETRY_SECS, Cache, refresh_secs
-from console_how import changelog, how, optimizations
-from console_layout import EDGE_CACHE, _empty, _page
-from console_list import repos_page, search
-from console_live import LiveData, LiveSite, live_refresher
-from console_migrations import migrations_page
-from console_overview import overview
-from console_repo import repo_page
+from console_live import LiveData, live_refresher
+from console_routes import console_router
 
 
 def _check(c: Cache, t: Int64) raises -> CheckRun:
@@ -183,119 +168,6 @@ def _refresher(arg: OpaquePtr) -> OpaquePtr:
         sleep(1.0)
 
 
-def _warming_up() raises -> Response:
-    var resp = _page(
-        "Warming up",
-        _empty("Warming up", "The census is reading the lake for the first time; this page reloads itself."),
-        "",
-    )
-    resp.status = 503
-    resp.reason = "Service Unavailable"
-    resp.headers.set("Retry-After", "5")
-    resp.headers.set("Refresh", "5")
-    resp.headers.set("Cache-Control", "no-store")
-    return resp^
-
-
-@fieldwise_init
-struct Site(Handler, Copyable):
-    """One route of the console, with the shared `Swap` of `Cache`s."""
-
-    var page: Int
-    var cache: Int
-    """The address of the `Swap[Cache]`, which lives as long as the process."""
-    var checks: Int
-    """The address of the `Swap[CheckRun]`."""
-    var model: Int
-    """The address of the `Swap[QueryModel]`."""
-
-    def serve(self, req: Request) raises -> Response:
-        ref sw = Pointer[Swap[Cache], MutUntrackedOrigin](unsafe_from_address=self.cache)[]
-        ref runs = Pointer[Swap[CheckRun], MutUntrackedOrigin](unsafe_from_address=self.checks)[]
-        if self.page == 10:
-            return _checks_page(runs.get()[])
-        # One reference for the whole request: a rebuild that finishes meanwhile
-        # doesn't change what this page reads.
-        var held = sw.get()
-        ref c = held[]
-        if not c.ready:
-            return _warming_up()
-        var resp = self._route(req, c)
-        var note = notice(runs.get()[])
-        if note.byte_length() > 0:
-            resp = _with_notice(resp^, note)
-        # A missing repo or a bad query isn't kept at the edge: Cloudflare would
-        # otherwise hold it for its default TTL.
-        resp.headers.set("Cache-Control", EDGE_CACHE if resp.status == 200 else "no-store")
-        return resp^
-
-    def _query_vector(self, req: Request, c: Cache) -> List[Float32]:
-        """`?q=` embedded, when the model is loaded and is the revision the
-        repos were embedded with; else empty (text search only)."""
-        ref models = Pointer[Swap[QueryModel], MutUntrackedOrigin](unsafe_from_address=self.model)[]
-        var held = models.get()
-        if not held[].ready() or held[].rev() != c.embed_rev:
-            return List[Float32]()
-        try:
-            var q = String(url_decode(req.query_param("q")).strip())
-            if q.byte_length() == 0:
-                return List[Float32]()
-            return held[].embed(q)
-        except e:
-            print("console: search query:", e)
-            return List[Float32]()
-
-    def _route(self, req: Request, c: Cache) raises -> Response:
-        if self.page == 0:
-            return overview(req, c)
-        if self.page == 1:
-            return repos_page(req, c)
-        if self.page == 2:
-            return search(req, c, self._query_vector(req, c))
-        if self.page == 3:
-            return repo_page(req, c)
-        if self.page == 4:
-            return overview_json(req, c)
-        if self.page == 5:
-            return index_json(req, c)
-        if self.page == 6:
-            return search_json(req, c, self._query_vector(req, c))
-        if self.page == 8:
-            return migrations_page(req, c)
-        if self.page == 9:
-            return versions_json(req, c)
-        return repo_json(req, c)
-
-
-def _checks_page(run: CheckRun) raises -> Response:
-    """`/checks`: the last data checks, as text."""
-    var resp = Response(status=200, reason="OK", body=List[UInt8](run.text().as_bytes()))
-    resp.headers.set("Content-Type", "text/plain; charset=utf-8")
-    # Never cached: it's where a failing check shows first.
-    resp.headers.set("Cache-Control", "no-store")
-    return resp^
-
-
-def _with_notice(var resp: Response, note: String) -> Response:
-    """`resp` with `note` atop its footer, when it is one of `_page`'s."""
-    comptime FOOTER = "<footer><div class=wrap>"
-    var html = String(StringSlice(unsafe_from_utf8=Span(resp.body)))
-    var k = html.find(FOOTER)
-    if k < 0:
-        return resp^
-    k += FOOTER.byte_length()
-    var out = String(
-        html[byte=:k], "<p class=notice role=status>", html_escape(note), " <a href='/checks'>Details</a></p>",
-        html[byte=k:],
-    )
-    resp.body = List[UInt8](out.as_bytes())
-    return resp^
-
-
-def _moved_to_migrations(req: Request) raises -> Response:
-    return redirect("/migrations", 301)
-
-
 def main() raises:
     var p = unsafe_alloc[Swap[Cache]](1)
     p.unsafe_write(Swap[Cache](Cache()))
@@ -316,24 +188,7 @@ def main() raises:
     var live = Int(pl)
     var live_thread = ThreadHandle.spawn[live_refresher](OpaquePtr(unsafe_from_address=live))
     live_thread.detach()
-    var r = Router()
-    r.get("/", Site(0, cache, checks, model))
-    r.get("/repos", Site(1, cache, checks, model))
-    r.get("/migrations", Site(8, cache, checks, model))
-    r.get("/versions", _moved_to_migrations)
-    r.get("/live", LiveSite(live, False))
-    r.get("/api/live", LiveSite(live, True))
-    r.get("/how", how)
-    r.get("/how/optimizations", optimizations)
-    r.get("/how/changelog", changelog)
-    r.get("/search", Site(2, cache, checks, model))
-    r.get("/repos/:owner/:name", Site(3, cache, checks, model))
-    r.get("/api/overview", Site(4, cache, checks, model))
-    r.get("/api/repos", Site(5, cache, checks, model))
-    r.get("/api/versions", Site(9, cache, checks, model))
-    r.get("/api/search", Site(6, cache, checks, model))
-    r.get("/api/repos/:owner/:name", Site(7, cache, checks, model))
-    r.get("/checks", Site(10, cache, checks, model))
+    var r = console_router(cache, checks, model, live)
     var addr = String("0.0.0.0:", getenv("PORT", "8080"))
     var server = HttpServer.bind(SocketAddr.parse(addr), ServerConfig())
     print("console on http://", addr, sep="")

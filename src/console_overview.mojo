@@ -23,6 +23,7 @@ from overview import (
 from console_cache import Cache, refresh_secs
 from console_how import MORCA_UI
 from console_layout import _empty, _help, _n, _page, _this_month
+from console_pages import page_json, page_line
 from console_list import _raw_query
 
 
@@ -393,7 +394,7 @@ def overview(req: Request, c: Cache) raises -> Response:
                 )
             )
             h.write("<div class=kpis>", _input_kpi(c), "</div>")
-            return _page("", h^, "overview")
+            return _page("", h^, "overview", description=page_line("/"), alternate=page_json("/"))
         var dc = ov.commits_30 - ov.commits_prev_30
         # Coverage: the repos whose history is read, and the GH Archive days
         # loaded since ARCHIVE_START; most numbers below rest on one of them.
@@ -692,6 +693,6 @@ def overview(req: Request, c: Cache) raises -> Response:
             ),
             "</p>",
         )
-        return _page("", h^, "overview")
+        return _page("", h^, "overview", description=page_line("/"), alternate=page_json("/"))
     except e:
         return internal_error(String(e))
