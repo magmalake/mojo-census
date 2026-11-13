@@ -3,6 +3,12 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.6.0 - 2026-11-13
+
+- **AI-friendly mojourney.dev:** the console serves `/llms.txt`, `/llms-full.txt`, `/sitemap.xml` and a `/robots.txt` with the sitemap, every page has a meta description and a link to its JSON, and `/api/repos?q=` filters as `/api/search` does. (#171)
+
+- **morca-mojo 0.27.0:** cgroups and overlapping schedulers on by default; deploy with morca-hetzner 0.27.0. (#172)
+
 ## 1.5.1 - 2026-11-12
 
 - **mojo_live hands over to a newer deploy** (morca-mojo 0.26.0): a run that is outdated stops between polls and succeeds, and the new code polls from the next hour. (#166)

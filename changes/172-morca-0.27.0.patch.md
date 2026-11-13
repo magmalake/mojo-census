@@ -1,1 +1,0 @@
-- **morca-mojo 0.27.0:** cgroups and overlapping schedulers on by default; deploy with morca-hetzner 0.27.0. (#172)

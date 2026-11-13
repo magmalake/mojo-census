@@ -1,1 +1,0 @@
-- **AI-friendly mojourney.dev:** the console serves `/llms.txt`, `/llms-full.txt`, `/sitemap.xml` and a `/robots.txt` with the sitemap, every page has a meta description and a link to its JSON, and `/api/repos?q=` filters as `/api/search` does. (#171)
