@@ -1,13 +1,15 @@
 """Clones each newly found Mojo repository and records its commits, tooling,
-packaging and Mojo version changes, and tags; repositories it has read
-before are skipped (mojo_retool reads them again).
+packaging and Mojo version changes, tags, and contributors by month (commit
+authors and co-authors as hashed emails, bots left out); repositories it has
+read before are skipped (mojo_retool reads them again).
 
 Keyed by the `repo` column of `mojo.repos` (`owner/name`), 50 repositories
 a run, and a sensor, so each snapshot mojo_repos commits starts runs for the
 repositories it adds. The run's one step is a gather over
 its keys: it sends every repository to a dista task (`read_history`: a
-bare clone and one `git log`), then appends what comes back to
-`mojo.commits` and `mojo.migrations` as one snapshot each.
+bare clone, one `git log` of the first-parent history and one of every
+commit's authors), then appends what comes back to `mojo.commits`,
+`mojo.migrations` and `mojo.contributors` as one snapshot each.
 
 Each repository's git tags go to `mojo.tags`, with the tooling, packaging
 and Mojo version at the tagged commit when it is on the first-parent
@@ -16,11 +18,14 @@ history. A repository read before tags were takes them from its rows in
 reads it again.
 
 A rerun doesn't duplicate rows: a repository already in `mojo.commits` gets
-no commits or migrations again, and one already in `mojo.tags` no tags. A
-repository with a history but no tags yet (read before tags were) is
-cloned without file contents and only its tags read (`read_tags`), so
-`morca backfill --rerun mojo_history @all` fills `mojo.tags` for every
-repository and leaves the other tables as they are.
+no commits or migrations again, one already in `mojo.tags` no tags, and one
+already in `mojo.contributors` no contributors. A repository with a history
+but no tags or no contributors yet (read before they were) is cloned
+without file contents and only its tags and contributors read
+(`read_tags_and_authors`), so
+`morca backfill --rerun --allow-append mojo_history @all` (safe here, as
+nothing is appended twice) fills `mojo.tags` and `mojo.contributors` for
+every repository and leaves the other tables as they are.
 `MOJO_HISTORY_MAX_KB` skips repositories GitHub says are bigger than that
 (for local runs; modular/modular is gigabytes).
 """
@@ -35,13 +40,16 @@ from morca.keyed import Keyed
 from morca.tables import append, ensure_table, scan, table
 
 from cols import col, i64_at, str_at
-from history import History, TagRow, join_tags, read_history, read_tags
+from contributors import AuthorMonth, contributors_batch
+from history import History, TagRow, join_tags, read_history, read_tags_and_authors
 from lake import (
     COMMITS,
+    CONTRIBUTORS,
     MIGRATIONS,
     REPOS,
     TAGS,
     commits_schema,
+    contributors_schema,
     migrations_schema,
     str_or_null,
     tags_schema,
@@ -57,7 +65,7 @@ from lake import (
 # `ctx.runtime`. A worker does the clone, so the step process never holds a
 # repository.
 comptime ReadHistory = Task[String, History, read_history]
-comptime ReadTags = Task[String, History, read_tags]
+comptime ReadTags = Task[String, History, read_tags_and_authors]
 comptime HistoryTasks = Tasks[ReadHistory, ReadTags]
 
 
@@ -127,21 +135,24 @@ def _done(mut ctx: Ctx, dataset: String = COMMITS) raises -> Dict[String, Bool]:
 
 def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     """Reads the git history of up to 50 repositories and appends their new
-    commits, migrations and tags.
+    commits, migrations, tags and contributors.
     The repositories are the run's `keys`, and each table gets one snapshot.
     Returns the number of commits appended.
 
     A repository falls in one of three groups, decided by what the tables
-    already hold: both commits and tags (skipped); commits but no tags
-    (`tags_only`, read by the cheaper `read_tags`); neither (a full
-    `read_history`). A repository that failed has no rows, so the next run
-    over it tries it again."""
+    already hold: commits, tags and contributors (skipped); commits but no
+    tags or no contributors (`tags_only`, read by the cheaper
+    `read_tags_and_authors`); no commits (a full `read_history`). A
+    repository that failed has no rows, so the next run over it tries it
+    again."""
     var commits_t = ensure_table(ctx, COMMITS, commits_schema())
     var migrations_t = ensure_table(ctx, MIGRATIONS, migrations_schema())
     var tags_t = ensure_table(ctx, TAGS, tags_schema())
+    var contributors_t = ensure_table(ctx, CONTRIBUTORS, contributors_schema())
     var sizes = _sizes(ctx)
     var done = _done(ctx)
     var tagged = _done(ctx, TAGS)
+    var counted = _done(ctx, CONTRIBUTORS)
     # 0 means no limit; local runs set it to skip modular/modular.
     var max_kb = Int64(Int(getenv("MOJO_HISTORY_MAX_KB", "0")))
     ref rt = ctx.runtime[HistoryTasks]()
@@ -153,8 +164,8 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     var tags_only = List[String]()
     for i in range(len(keys)):
         var repo = keys.items[i].text
-        if repo in done and repo in tagged:
-            ctx.log(String(repo, ": already in mojo.commits and mojo.tags, skipped"))
+        if repo in done and repo in tagged and repo in counted:
+            ctx.log(String(repo, ": already in mojo.commits, mojo.tags and mojo.contributors, skipped"))
             continue
         var kb = sizes.get(repo, Int64(0))
         if max_kb > 0 and kb > max_kb:
@@ -200,6 +211,7 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     var m_kind = ColumnBuilder.of(ms, 4)
     var m_from = ColumnBuilder.of(ms, 5)
     var m_to = ColumnBuilder.of(ms, 6)
+    var authors = List[AuthorMonth]()
     var failed = 0
     var first_error = String()
     for i in range(len(refs)):
@@ -232,15 +244,22 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
                 t_tool.add(str_or_null(t.tooling))
                 t_ver.add(str_or_null(t.mojo_version))
                 t_pack.add(str_or_null(t.packaging))
+        if names[i] not in counted:
+            for ref a in h.authors.items:
+                authors.append(a.copy())
         if names[i] in done:
-            ctx.log(String(names[i], ": ", len(tags), " tags (history already read)"))
+            ctx.log(String(
+                names[i], ": ", len(tags), " tags, ", len(h.authors),
+                " contributor-months (history already read)",
+            ))
             continue
         var last_lines = Int64(0)
         if len(h.commits) > 0:
             last_lines = h.commits.items[len(h.commits) - 1].mojo_lines
         ctx.log(String(
             names[i], ": ", len(h.commits), " commits, ", len(h.migrations),
-            " migrations, ", len(tags), " tags, ", last_lines, " lines of Mojo now",
+            " migrations, ", len(tags), " tags, ", len(h.authors), " contributor-months, ",
+            last_lines, " lines of Mojo now",
         ))
         for ref c in h.commits.items:
             c_repo.add(Datum.string_(c.repo))
@@ -272,9 +291,12 @@ def histories(mut ctx: Ctx, keys: Seq[Name]) raises -> Int:
     var n_tags = len(t_repo)
     if n_tags > 0:
         _ = append(ctx, tags_t, [batch_of([t_repo^, t_tag^, t_commit^, t_ann^, t_at^, t_tool^, t_ver^, t_pack^])])
+    if len(authors) > 0:
+        _ = append(ctx, contributors_t, [contributors_batch(authors)])
     ctx.log(String(
-        len(refs), " repositories read (", len(tags_only), " for tags only, ",
-        failed, " failed), ", n, " commits, ", n_tags, " tags",
+        len(refs), " repositories read (", len(tags_only), " for tags and contributors only, ",
+        failed, " failed), ", n, " commits, ", n_tags, " tags, ", len(authors),
+        " contributor-months",
     ))
     # Some failures are normal (a deleted repository, a clone timeout). All of
     # them is not: that points at something shared (git, the network, the
@@ -300,7 +322,7 @@ comptime Histories = Step[
     Gather,
     retries=1,
     reads=[REPOS],
-    writes=[COMMITS, MIGRATIONS, TAGS],
+    writes=[COMMITS, MIGRATIONS, TAGS, CONTRIBUTORS],
 ]
 # `Keyed` partitions are names read from a column of a dataset (the distinct
 # `repo` values of the current `mojo.repos`), not a calendar. `sensor=True`:

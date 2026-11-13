@@ -1,14 +1,15 @@
 """The console's page of one repo (`/repos/<owner>/<name>`): its title block,
 lines of Mojo over time, dependencies, similar repos, stars per month,
-releases and tags, issues and pull requests, migrations and latest commits."""
+contributors per month, releases and tags, issues and pull requests, migrations and latest commits."""
 
 from flare.http import Request, Response, html_escape, internal_error, not_found
+from contributors import RepoContributors
 from days import day_text
 from model import Library, MonthActivity, Point, day
 from similar import Neighbor
 from categories import CATEGORIES_VERSION, VOTERS, category_title
 from committype import commit_type_keys, commit_type_title, has_subjects, typed_commits
-from overview import tool_code, unversioned
+from overview import month_label, tool_code, unversioned
 from versions import source_label, usable
 
 from console_cache import Cache
@@ -288,6 +289,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
             _stat("Created", day(l.created_at), String(_age(l.created_at, today), " ago") if l.created_at else String()),
             _stat("Lines of Mojo", _n(l.mojo_lines), String(_n(l.mojo_files), " files")),
             _stat("Commits", _n(Int64(l.commits)), String(day(l.first_commit), " to ", day(l.last_commit)) if l.commits > 0 else String()),
+            _contributors_stat(data.contributors),
             _version_stat(l),
             _category_stat(c.category_of(repo)),
             _stat("Tooling", _or_dash(l.tooling)),
@@ -304,6 +306,7 @@ def repo_page(req: Request, c: Cache) raises -> Response:
             h.write(_empty("No activity yet", "The activity pipeline hasn't counted this repository's GH Archive events yet."))
         else:
             h.write(_stars_chart(data.acts, loaded))
+        h.write(_contributors_section(data.contributors))
         h.write("<h2>Releases and tags</h2>")
         ref rels = data.rels
         if len(rels) == 0:
@@ -443,3 +446,51 @@ def _types_line(types: List[String]) -> String:
         out.write(commit_type_title(k), " ", (c * 100 + n // 2) // n, "%")
     out += "</p>"
     return out^
+
+
+def _contributors_stat(x: RepoContributors) -> String:
+    """The Contributors tile: distinct commit authors and co-authors, and
+    the new ones in the latest month with a commit."""
+    if x.total == 0:
+        return _stat("Contributors", _or_dash(String()), "not read yet")
+    var last = x.months[len(x.months) - 1].copy()
+    return _stat(
+        "Contributors", _n(Int64(x.total)),
+        String(last.new, " new in ", last.month) if last.new > 0 else String("commit authors, bots left out"),
+    )
+
+
+def _month_index(month: String) raises -> Int:
+    """Months since 1970-01 of a `YYYY-MM`."""
+    return (Int(month[byte=0:4]) - 1970) * 12 + Int(month[byte=5:7]) - 1
+
+
+def _contributors_section(x: RepoContributors) raises -> String:
+    """People with a commit per month, and the new ones, over the months from
+    its first commit to its last; nothing before its contributors are read."""
+    if len(x.months) == 0:
+        return String()
+    var first = _month_index(x.months[0].month)
+    var last = _month_index(x.months[len(x.months) - 1].month)
+    var months = List[String]()
+    for m in range(first, last + 1):
+        months.append(month_label(m))
+    var counts = Dict[String, Int]()
+    var top = 1
+    for ref m in x.months:
+        counts[String("contributors|", m.month)] = m.active
+        counts[String("new|", m.month)] = m.new
+        top = max(top, m.active)
+    var names: List[String] = ["contributors", "new"]
+    return String(
+        "<h2>Contributors per month</h2>",
+        _line_chart(
+            months, names, counts, top,
+            String("Line chart: contributors and new contributors per month"),
+            String("People with a commit each month, and the ones with their first, ", months[0], " to ", months[len(months) - 1]),
+            String(
+                _n(Int64(x.total)), " people authored or co-authored its commits (every commit reachable from",
+                " HEAD, Co-authored-by trailers included, bots left out), counted by email.",
+            ),
+        ),
+    )

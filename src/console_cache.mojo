@@ -4,6 +4,7 @@ pages only read; and how often it looks (`refresh_secs`)."""
 
 from std.os import getenv
 
+from contributors import RepoContributors, read_contributors
 from deps import Depended, most_depended
 from listing import NEW_30D, NEW_LAST_MONTH, NEW_MONTH
 from model import (
@@ -64,6 +65,8 @@ struct RepoData(Copyable, Movable):
     var acts: List[MonthActivity]
     var issues: RepoIssues
     """Its issues and pull requests (mojo.issues), summarized."""
+    var contributors: RepoContributors
+    """Its distinct commit authors, in all and by month (mojo.contributors)."""
 
     def __init__(out self):
         self.pts = List[Point]()
@@ -71,6 +74,7 @@ struct RepoData(Copyable, Movable):
         self.rels = List[Release]()
         self.acts = List[MonthActivity]()
         self.issues = RepoIssues()
+        self.contributors = RepoContributors.empty()
 
 
 struct Cache(Movable):
@@ -288,6 +292,10 @@ struct Cache(Movable):
             if e.key not in details:
                 details[e.key] = RepoData()
             details[e.key].issues = e.value.copy()
+        for e in read_contributors().items():
+            if e.key not in details:
+                details[e.key] = RepoData()
+            details[e.key].contributors = e.value.copy()
         self.loaded = activity_months()
         self.migrations_body = _migrations_body(rows) if len(rows) > 0 else String()
         self.version_rows = rows^

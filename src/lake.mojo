@@ -20,6 +20,7 @@ comptime ACTIVITY = "mojo.activity"
 comptime RELEASES = "mojo.releases"
 comptime ACTIVITY_REPOS = "mojo.activity_repos"
 comptime TAGS = "mojo.tags"
+comptime CONTRIBUTORS = "mojo.contributors"
 comptime REPO_VERSIONS = "mojo.repo_versions"
 comptime REPO_DEPS = "mojo.repo_deps"
 comptime CANDIDATES = "gharchive.candidates"
@@ -184,6 +185,20 @@ comptime TAGS_SCHEMA = (
 (peeled), the tagger's date for an annotated tag or the commit's for a
 lightweight one, and the tooling, Mojo version and packaging at that commit when it
 is on the first-parent history mojo.commits has."""
+
+comptime CONTRIBUTORS_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"month","required":true,"type":"date"},'
+    '{"id":3,"name":"author","required":true,"type":"string"},'
+    '{"id":4,"name":"commits","required":true,"type":"long"}]}'
+)
+"""Each repository's contributors by month (mojo_history,
+`contributors.read_authors`): one row per (repository, month, person) with
+the commits they authored or co-authored that month, over every commit
+reachable from HEAD. `month` is its first day, by author time; `author` is
+`contributors.author_id`, a hash of the email (no emails or names are
+kept). Bots are left out."""
 
 comptime REPO_VERSIONS_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -415,6 +430,10 @@ def activity_repos_schema() raises -> Schema:
 
 def tags_schema() raises -> Schema:
     return Schema.parse(TAGS_SCHEMA)
+
+
+def contributors_schema() raises -> Schema:
+    return Schema.parse(CONTRIBUTORS_SCHEMA)
 
 
 def repo_versions_schema() raises -> Schema:
