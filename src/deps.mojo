@@ -5,8 +5,9 @@ publishes itself under, from its manifests: `pixi.toml`, `mojoproject.toml`,
 `manifest_deps` reads one file into `Dep` rows (`mojo_versions` stores them
 in `mojo.repo_deps`); `resolve` turns every repository's rows into the
 Mojo libraries each depends on and the repositories that depend on each,
-which the console computes when it builds its pages, so the reverse counts
-need no pipeline of their own.
+directly, through a fork of it, or through one of its dependents (second
+degree), which the console computes when it builds its pages, so the
+reverse counts need no pipeline of their own.
 
 The readers are line-based, like the version readers in `versions.mojo`: a
 manifest is TOML or YAML a person wrote by a template, and the few shapes
@@ -625,11 +626,30 @@ struct DepGraph(Copyable, Movable):
     var declared: Dict[String, List[String]]
     """Every dependency each one declares (toolchain left out), by name as
     first written, sorted."""
+    var via_forks: Dict[String, List[String]]
+    """Of `used_by`, the ones that depend on it only through a fork of it,
+    sorted."""
+    var second: Dict[String, List[String]]
+    """The census repositories that depend on it through one of its
+    `used_by` (second degree), each once, sorted; none of them is in its
+    `used_by`, nor is it itself."""
 
     def __init__(out self):
         self.depends_on = Dict[String, List[String]]()
         self.used_by = Dict[String, List[String]]()
         self.declared = Dict[String, List[String]]()
+        self.via_forks = Dict[String, List[String]]()
+        self.second = Dict[String, List[String]]()
+
+
+@fieldwise_init
+struct ForkOf(Copyable, Movable):
+    """What GitHub says a repository named as a dependency was forked from
+    (mojo.dep_forks)."""
+
+    var parent: String
+    var source: String
+    """The root of its fork network."""
 
 
 def _short(repo: String) -> String:
@@ -647,7 +667,11 @@ def _sorted(var xs: List[String]) -> List[String]:
     return xs^
 
 
-def resolve(repos: List[String], rows: List[RepoDep]) raises -> DepGraph:
+def resolve(
+    repos: List[String],
+    rows: List[RepoDep],
+    forks: Dict[String, ForkOf] = Dict[String, ForkOf](),
+) raises -> DepGraph:
     """Each repository's dependencies that are census repositories, and the
     reverse.
 
@@ -661,6 +685,13 @@ def resolve(repos: List[String], rows: List[RepoDep]) raises -> DepGraph:
        `Lightbug-HQ/lightbug_http`), when only one has it.
     Names compare by `norm_name`. The toolchain (`mojo`, `max`, ...) and a
     `path` dependency don't resolve, nor does a repository to itself.
+
+    A GitHub URL of a repository that isn't in `repos` but is a fork
+    (`forks`, keyed by the lowercased `owner/name`) resolves to its source,
+    or else its parent, when that is a census repository: the fork's
+    dependents are rolled up into it, and `via_forks` names the ones that
+    use it only that way. `second` is worked out from the resulting
+    `used_by`.
     Workspace names aren't used in (2): a workspace is often named after
     the template it came from (`my-project`, `mojo`), not a package."""
     var g = DepGraph()
@@ -691,6 +722,8 @@ def resolve(repos: List[String], rows: List[RepoDep]) raises -> DepGraph:
                 have = True
         if not have:
             provided[n].append(owner)
+    # Per repository, its targets, each True when declared directly and
+    # False when reached only through a fork.
     var deps = Dict[String, Dict[String, Bool]]()
     var declared = Dict[String, Dict[String, String]]()
     for ref rd in rows:
@@ -707,8 +740,16 @@ def resolve(repos: List[String], rows: List[RepoDep]) raises -> DepGraph:
         if n not in declared[me]:
             declared[me][n] = d.name
         var target = String()
+        var direct = True
         if d.dep_repo.byte_length() > 0:
-            target = by_lower.get(d.dep_repo.lower(), String())
+            var low = d.dep_repo.lower()
+            target = by_lower.get(low, String())
+            if target.byte_length() == 0 and low in forks:
+                ref f = forks[low]
+                target = by_lower.get(f.source.lower(), String())
+                if target.byte_length() == 0:
+                    target = by_lower.get(f.parent.lower(), String())
+                direct = False
         elif d.kind != "path" and d.kind != "url":
             if n in provided:
                 ref ps = provided[n]
@@ -724,26 +765,58 @@ def resolve(repos: List[String], rows: List[RepoDep]) raises -> DepGraph:
             continue
         if me not in deps:
             deps[me] = Dict[String, Bool]()
-        deps[me][target] = True
+        deps[me][target] = deps[me].get(target, False) or direct
     for e in deps.items():
         var ts = List[String]()
-        for t in e.value.keys():
-            ts.append(t)
-            if t not in g.used_by:
-                g.used_by[t] = List[String]()
-            g.used_by[t].append(e.key)
+        for t in e.value.items():
+            ts.append(t.key)
+            if t.key not in g.used_by:
+                g.used_by[t.key] = List[String]()
+            g.used_by[t.key].append(e.key)
+            if not t.value:
+                if t.key not in g.via_forks:
+                    g.via_forks[t.key] = List[String]()
+                g.via_forks[t.key].append(e.key)
         g.depends_on[e.key] = _sorted(ts^)
     var targets = List[String]()
     for t in g.used_by.keys():
         targets.append(t)
     for t in targets:
         g.used_by[t] = _sorted(g.used_by[t].copy())
+        if t in g.via_forks:
+            g.via_forks[t] = _sorted(g.via_forks[t].copy())
+    for t in targets:
+        var s = second_degree(t, g.used_by)
+        if len(s) > 0:
+            g.second[t] = s^
     for e in declared.items():
         var ns = List[String]()
         for v in e.value.values():
             ns.append(v)
         g.declared[e.key] = _sorted(ns^)
     return g^
+
+
+def second_degree(repo: String, used_by: Dict[String, List[String]]) raises -> List[String]:
+    """The repositories that depend on `repo` through one of its dependents
+    (`used_by[repo]`) and not directly, each once however many of them it
+    goes through, sorted; `repo` itself is left out, which a cycle would
+    bring in."""
+    var out = List[String]()
+    if repo not in used_by:
+        return out^
+    var seen = Dict[String, Bool]()
+    seen[repo] = True
+    for u in used_by[repo]:
+        seen[u] = True
+    for u in used_by[repo]:
+        if u not in used_by:
+            continue
+        for v in used_by[u]:
+            if v not in seen:
+                seen[v] = True
+                out.append(v)
+    return _sorted(out^)
 
 
 def owner_of(repo: String) -> String:

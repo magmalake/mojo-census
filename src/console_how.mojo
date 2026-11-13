@@ -143,7 +143,10 @@ comptime HOW_PIPELINES = (
     + MORCA_UI
     + "/pipelines/mojo_stats' rel=noopener>mojo_stats</a> asks the GitHub API"
     " about every repo each day (one request each) and keeps the stars, forks,"
-    " issues and topics day by day in <code>mojo.repo_stats</code>.</li></ul>"
+    " issues and topics day by day in <code>mojo.repo_stats</code>. It also asks"
+    " once about each repo a census repo depends on outside the census, and keeps"
+    " in <code>mojo.dep_forks</code> which of them are forks, and of what: a repo"
+    " that uses a fork of a library counts as one of the library's users.</li></ul>"
     "<p>Clones, in mojo_history and mojo_versions, have a time limit, retries"
     " with backoff and a minimum transfer speed; a repository that still fails"
     " is logged and skipped for that run.</p>"

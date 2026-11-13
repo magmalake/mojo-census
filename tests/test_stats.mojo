@@ -5,7 +5,7 @@
 
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
-from detect import parse_repo
+from detect import parse_fork, parse_repo
 from fetch import Reply
 from stats import limited, parse_stats, state_of, wait_seconds
 
@@ -64,6 +64,22 @@ def test_discovery_topics() raises:
     var info = parse_repo(_repo_json())
     assert_equal(len(info.topics), 3)
     assert_equal(info.topics[1], "numerics")
+
+
+def test_parse_fork() raises:
+    var f = parse_fork(String(
+        '{"full_name":"c/lib","fork":true,"owner":{"login":"c"},',
+        '"parent":{"full_name":"b/lib","fork":true,"owner":{"full_name":"no"}},',
+        '"source":{"full_name":"up/lib","fork":false}}',
+    ))
+    assert_equal(f.repo, "c/lib")
+    assert_true(f.fork)
+    assert_equal(f.parent, "b/lib")
+    assert_equal(f.source, "up/lib")
+    var n = parse_fork(_repo_json())
+    assert_false(n.fork)
+    assert_equal(n.parent, "")
+    assert_equal(n.source, "")
 
 
 def test_states_and_limits() raises:

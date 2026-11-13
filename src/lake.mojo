@@ -22,6 +22,7 @@ comptime ACTIVITY_REPOS = "mojo.activity_repos"
 comptime TAGS = "mojo.tags"
 comptime REPO_VERSIONS = "mojo.repo_versions"
 comptime REPO_DEPS = "mojo.repo_deps"
+comptime DEP_FORKS = "mojo.dep_forks"
 comptime CANDIDATES = "gharchive.candidates"
 comptime REPO_HOUR = "gharchive.repo_hour"
 comptime GH_RELEASES = "gharchive.releases"
@@ -244,6 +245,22 @@ under (`provides`; `package`, `recipe`, `pyproject` or `workspace`), with
 the table or requirements list (`section`) and the file. Which of them are
 Mojo libraries of the census, and the reverse counts, the console works out
 (`deps.resolve`), so they follow mojo.repos without a rerun."""
+
+comptime DEP_FORKS_SCHEMA = (
+    '{"schema-id":0,"type":"struct","fields":['
+    '{"id":1,"name":"repo","required":true,"type":"string"},'
+    '{"id":2,"name":"fetched_at","required":true,"type":"timestamptz"},'
+    '{"id":3,"name":"state","required":true,"type":"string"},'
+    '{"id":4,"name":"fork","required":false,"type":"boolean"},'
+    '{"id":5,"name":"parent","required":false,"type":"string"},'
+    '{"id":6,"name":"source","required":false,"type":"string"}]}'
+)
+"""The GitHub repositories that census repositories name as dependencies
+(mojo.repo_deps' `dep_repo`) and that aren't census repositories
+themselves, asked about once each by mojo_stats: whether each is a `fork`,
+and its `parent` and the root of its fork network (`source`). `state` is
+mojo.repo_stats': `ok`, `gone`, `blocked` or `error HTTP n` (asked again).
+The console rolls a fork's dependents up into its source (`deps.resolve`)."""
 
 comptime CANDIDATES_SCHEMA = (
     '{"schema-id":0,"type":"struct","fields":['
@@ -482,6 +499,10 @@ def repo_embeddings_schema() raises -> Schema:
 
 def repo_deps_schema() raises -> Schema:
     return Schema.parse(REPO_DEPS_SCHEMA)
+
+
+def dep_forks_schema() raises -> Schema:
+    return Schema.parse(DEP_FORKS_SCHEMA)
 
 
 def checked_schema() raises -> Schema:

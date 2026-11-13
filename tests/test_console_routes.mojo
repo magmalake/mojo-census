@@ -66,6 +66,8 @@ def _lib(repo: String, description: String, topics: List[String]) -> Library:
         List[String](),
         List[String](),
         List[String](),
+        List[String](),
+        List[String](),
         "rattler",
     )
 
