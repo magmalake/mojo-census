@@ -1,1 +1,0 @@
-- **Contributors per repo:** distinct commit authors, in all and per month, on the repo page and in its JSON; a backfill after deploying counts the repos read before. (#175)

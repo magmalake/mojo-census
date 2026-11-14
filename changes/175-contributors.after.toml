@@ -1,4 +1,0 @@
-[[step]]
-id = "history-contributors"
-when = "after"
-run = "morca backfill --rerun --allow-append mojo_history @all"

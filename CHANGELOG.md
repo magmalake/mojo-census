@@ -3,6 +3,19 @@
 The fragments in [changes/](changes/README.md) are written here at each
 release.
 
+## 1.7.0 - 2026-11-14
+
+- **Contributors per repo:** distinct commit authors, in all and per month, on the repo page and in its JSON; a backfill after deploying counts the repos read before. (#175)
+
+- **Dependents through forks and second degree:** "Used by" counts projects that depend on a fork of a library (mojo_stats records forks in the new mojo.dep_forks), and the repo page and API show the second degree. (#176)
+
+- **morca 0.28.0:** with json_mlake 0.5.1, flare_mlake 0.14.1, k8s-mojo 0.1.4 and dista 0.5.0; the full `mojo` package is pinned for llvm-symbolizer. (#179)
+
+**After deploying** (deploy.sh shows these and runs the commands):
+
+- Run `morca backfill --rerun --allow-append mojo_history @all`.
+- Run `morca backfill --rerun mojo_stats 2026-11-14`.
+
 ## 1.6.0 - 2026-11-13
 
 - **AI-friendly mojourney.dev:** the console serves `/llms.txt`, `/llms-full.txt`, `/sitemap.xml` and a `/robots.txt` with the sitemap, every page has a meta description and a link to its JSON, and `/api/repos?q=` filters as `/api/search` does. (#171)

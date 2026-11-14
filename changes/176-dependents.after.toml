@@ -1,4 +1,0 @@
-[[step]]
-id = "stats-dep-forks"
-when = "after"
-run = "morca backfill --rerun mojo_stats 2026-11-13"
