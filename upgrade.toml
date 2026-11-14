@@ -8,6 +8,19 @@
 # newest release first.
 
 [[version]]
+version = "1.7.0"
+
+[[version.step]]
+id = "history-contributors"
+when = "after"
+run = "morca backfill --rerun --allow-append mojo_history @all"
+
+[[version.step]]
+id = "stats-dep-forks"
+when = "after"
+run = "morca backfill --rerun mojo_stats 2026-11-14"
+
+[[version]]
 version = "1.5.0"
 
 [[version.step]]
