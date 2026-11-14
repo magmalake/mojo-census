@@ -1,0 +1,1 @@
+- **morca 0.28.0:** with json_mlake 0.5.1, flare_mlake 0.14.1, k8s-mojo 0.1.4 and dista 0.5.0; the full `mojo` package is pinned for llvm-symbolizer.
